@@ -16,8 +16,11 @@ VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 else
 
 # Gate level simulation
-# Use the default pipeline logic, but ensure SIM is defined
-COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1
+# Include PDK models to allow elaboration to succeed. 
+# UNIT_DELAY is used to prevent zero-delay loop hangs if they occur.
+COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1 -DUNIT_DELAY=\#1 -DUNIT_DELAY_RISE=1 -DUNIT_DELAY_FALL=1
+VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
+VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 
 endif

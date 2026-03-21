@@ -1,7 +1,7 @@
 # Tiny Tapeout Project Information
 project:
-  title: "Advanced Tunable TRNG (Sky130)"
-  description: "8-RO bank TRNG with NIST health monitors, UART, and SPI interfaces."
+  title: "Scientist TRNG (Sky130)"
+  description: "8-RO bank TRNG with NIST health monitors and on-chip frequency characterization via SPI."
   author: "Josh (Gemini CLI)"
   language: "Verilog"
   clock_hz: 10000000
@@ -14,6 +14,7 @@ project:
     - "von_neumann.v"
     - "uart_tx.v"
     - "spi_follower.v"
+    - "ro_freq_counter.v"
 
 # Pins assignments
 # ui_in[7:0] : Dedicated inputs
@@ -52,8 +53,8 @@ pinout:
   uio[2]: ""
   uio[3]: "SPI CS_N (Active Low)"
   uio[4]: "SPI SCLK"
-  uio[5]: "SPI MOSI (Unused)"
-  uio[6]: "SPI MISO"
+  uio[5]: "SPI MOSI (Address/Data In)"
+  uio[6]: "SPI MISO (Register Out)"
   uio[7]: ""
 
 # Do not change!

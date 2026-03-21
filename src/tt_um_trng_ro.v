@@ -26,7 +26,7 @@ module tt_um_chicagojones_trng_ro (
 
     // Sub-module connections
     wire [2:0] ro_sel;
-    wire       ro_raw;
+    wire [7:0] ro_raw_signals;
     wire       sampled_bit;
     
     wire       alarm;
@@ -37,9 +37,57 @@ module tt_um_chicagojones_trng_ro (
 
     wire       uart_tx_out;
 
+    // -- Register File & SPI --
+    wire [6:0] reg_addr;
+    reg  [7:0] reg_data_in;
+    wire [7:0] reg_data_out;
+    wire       reg_write_en;
+
+    // Frequency Counter Outputs
+    wire [15:0] freq_counts [7:0];
+
+    // SPI Follower
+    spi_follower spi_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .sclk(spi_sclk),
+        .cs_n(spi_cs_n),
+        .mosi(spi_mosi),
+        .miso(spi_miso),
+        .reg_addr(reg_addr),
+        .reg_data_in(reg_data_in),
+        .reg_data_out(reg_data_out),
+        .reg_write_en(reg_write_en)
+    );
+
+    // Register Read Multiplexer
+    always @(*) begin
+        case (reg_addr)
+            7'h00: reg_data_in = freq_counts[0][7:0];
+            7'h01: reg_data_in = freq_counts[1][7:0];
+            7'h02: reg_data_in = freq_counts[2][7:0];
+            7'h03: reg_data_in = freq_counts[3][7:0];
+            7'h04: reg_data_in = freq_counts[4][7:0];
+            7'h05: reg_data_in = freq_counts[5][7:0];
+            7'h06: reg_data_in = freq_counts[6][7:0];
+            7'h07: reg_data_in = freq_counts[7][7:0];
+            7'h08: reg_data_in = freq_counts[0][15:8];
+            7'h09: reg_data_in = freq_counts[1][15:8];
+            7'h0A: reg_data_in = freq_counts[2][15:8];
+            7'h0B: reg_data_in = freq_counts[3][15:8];
+            7'h0C: reg_data_in = freq_counts[4][15:8];
+            7'h0D: reg_data_in = freq_counts[5][15:8];
+            7'h0E: reg_data_in = freq_counts[6][15:8];
+            7'h0F: reg_data_in = freq_counts[7][15:8];
+            7'h10: reg_data_in = {3'b0, alarm, 1'b0, ro_sel}; // Status
+            7'h11: reg_data_in = out_reg; // Last random byte
+            default: reg_data_in = 8'h00;
+        endcase
+    end
+
     // -- UART Transmitter --
     uart_tx #(
-        .BAUD_DIV(87) // 10MHz / 115200
+        .BAUD_DIV(87)
     ) uart_inst (
         .clk(clk),
         .rst_n(rst_n),
@@ -47,17 +95,6 @@ module tt_um_chicagojones_trng_ro (
         .trigger(byte_valid),
         .tx(uart_tx_out),
         .busy()
-    );
-
-    // -- SPI Follower --
-    spi_follower spi_inst (
-        .clk(clk),
-        .rst_n(rst_n),
-        .data_in(out_reg),
-        .sclk(spi_sclk),
-        .cs_n(spi_cs_n),
-        .mosi(spi_mosi),
-        .miso(spi_miso)
     );
 
     // -- Auto-Tuner --
@@ -78,8 +115,21 @@ module tt_um_chicagojones_trng_ro (
         .en(en),
         .sel(ro_sel),
         .sampled_bit(sampled_bit),
-        .ro_raw(ro_raw)
+        .ro_outs(ro_raw_signals)
     );
+
+    // Frequency Counters for all 8 ROs
+    genvar k;
+    generate
+        for (k = 0; k < 8; k = k + 1) begin : freq_bank
+            ro_freq_counter fc_inst (
+                .clk(clk),
+                .rst_n(rst_n),
+                .ro_in(ro_raw_signals[k]),
+                .count(freq_counts[k])
+            );
+        end
+    endgenerate
 
     // -- NIST Health Monitor (RCT & APT) --
     nist_health_monitor monitor_inst (
@@ -114,7 +164,7 @@ module tt_um_chicagojones_trng_ro (
             bit_count  <= 3'd0;
             byte_valid <= 1'b0;
         end else begin
-            byte_valid <= 1'b0; // Pulse for 1 cycle
+            byte_valid <= 1'b0;
             if (en && vn_valid) begin
                 shift_reg <= {shift_reg[6:0], vn_bit};
                 if (bit_count == 3'd7) begin
@@ -139,17 +189,14 @@ module tt_um_chicagojones_trng_ro (
     assign uio_out[5:3] = 3'b0;
     assign uio_out[7]   = 1'b0;
     
-    // 0, 1, 6 are outputs (01000011)
     assign uio_oe       = 8'b01000011; 
 
-    // Dummy wire for linter
-    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, ro_raw, spi_mosi};
+    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, spi_mosi};
 
 endmodule
 
 /* 
  * Multi-RO Core 
- * Instantiates 8 ROs and XORs them. 
  */
 module trng_core (
     input  wire       clk,
@@ -157,16 +204,13 @@ module trng_core (
     input  wire       en,
     input  wire [2:0] sel,
     output wire       sampled_bit,
-    output wire       ro_raw
+    output wire [7:0] ro_outs
 );
-
-    wire [7:0] ro_outs;
 
     // RO 0: Tunable (3 to 31 stages)
     ro_tunable ro0 (.en(en), .sel(sel), .ro_out(ro_outs[0]));
 
-    // RO 1-7: Fixed lengths (Primes to avoid resonance)
-    // Varying drive strength to diversify frequencies further
+    // RO 1-7: Fixed lengths (Primes)
     ro_fixed #(.LENGTH(13), .DRIVE(1)) ro1 (.en(en), .ro_out(ro_outs[1]));
     ro_fixed #(.LENGTH(17), .DRIVE(2)) ro2 (.en(en), .ro_out(ro_outs[2]));
     ro_fixed #(.LENGTH(19), .DRIVE(4)) ro3 (.en(en), .ro_out(ro_outs[3]));
@@ -176,15 +220,15 @@ module trng_core (
     ro_fixed #(.LENGTH(37), .DRIVE(1)) ro7 (.en(en), .ro_out(ro_outs[7]));
 
     // XOR tree to mix the entropy
-    assign ro_raw = ^ro_outs;
+    wire ro_combined = ^ro_outs;
 
-    // 4-stage Synchronizer for metastability mitigation
+    // 4-stage Synchronizer
     reg [3:0] sync_regs;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             sync_regs <= 4'b0;
         else
-            sync_regs <= {sync_regs[2:0], ro_raw};
+            sync_regs <= {sync_regs[2:0], ro_combined};
     end
 
     assign sampled_bit = sync_regs[3];
@@ -215,11 +259,7 @@ module ro_tunable (
     assign chain[0] = ~(feedback & en);
     `else
     /* verilator lint_off PINMISSING */
-    sky130_fd_sc_hd__nand2_1 nand_inst (
-        .A(feedback),
-        .B(en),
-        .Y(chain[0])
-    );
+    sky130_fd_sc_hd__nand2_1 nand_inst (.A(feedback), .B(en), .Y(chain[0]));
     /* verilator lint_on PINMISSING */
     `endif
     
@@ -230,10 +270,7 @@ module ro_tunable (
             assign chain[i] = ~chain[i-1];
             `else
             /* verilator lint_off PINMISSING */
-            sky130_fd_sc_hd__inv_1 inv_inst (
-                .A(chain[i-1]),
-                .Y(chain[i])
-            );
+            sky130_fd_sc_hd__inv_1 inv_inst (.A(chain[i-1]), .Y(chain[i]));
             /* verilator lint_on PINMISSING */
             `endif
         end
@@ -255,11 +292,7 @@ module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
     assign chain[0] = ~(chain[LENGTH-1] & en);
     `else
     /* verilator lint_off PINMISSING */
-    sky130_fd_sc_hd__nand2_1 nand_inst (
-        .A(chain[LENGTH-1]),
-        .B(en),
-        .Y(chain[0])
-    );
+    sky130_fd_sc_hd__nand2_1 nand_inst (.A(chain[LENGTH-1]), .B(en), .Y(chain[0]));
     /* verilator lint_on PINMISSING */
     `endif
     
