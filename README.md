@@ -5,7 +5,7 @@ A True Random Number Generator (TRNG) based on tunable ring oscillators, designe
 ## Design Goals
 - **Tunability:** Adjust the number of inverters in the ring to optimize entropy extraction.
 - **Process Robustness:** Ensure the RO oscillates across PVT (Process, Voltage, Temperature) variations.
-- **Compactness:** Fit within 2x2 Tiny Tapeout tiles (334um x 225um).
+- **Compactness:** Fit within 1x2 Tiny Tapeout tiles (160um x 450um).
 - **Interface:** Standard Tiny Tapeout 8x8x8 interface.
 
 ## Architecture
