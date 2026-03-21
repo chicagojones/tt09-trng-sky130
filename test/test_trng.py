@@ -355,7 +355,9 @@ async def test_auto_tuner_cycling(dut):
 
 @cocotb.test()
 async def test_enable_disable(dut):
-    """When en=0, frequency counter should stop accumulating."""
+    """When en=0, the RO sim model stops toggling and byte_valid stops firing.
+    Note: In SIM mode, the freq counter counts system clocks directly (not RO edges),
+    so we verify enable/disable through the bypass_vn + byte_valid path instead."""
     if os.environ.get('GATES') == 'yes':
         dut._log.info("GLS – skipping"); return
 
@@ -363,26 +365,42 @@ async def test_enable_disable(dut):
     cocotb.start_soon(clock.start())
     await reset_dut(dut)
 
-    # Start with en=1, select RO0, wait for a frequency measurement
-    dut.ui_in.value = (1 << 3)
-    await spi_write_byte(dut, 0x10, 0x00)
-    await wait_clocks(dut, 2200)
-    count_enabled = await spi_read_freq_count(dut)
-    dut._log.info(f"RO0 count with en=1: {count_enabled}")
-    assert count_enabled > 0, "Counter should be non-zero when enabled"
+    # Enable TRNG and bypass whitener so byte_valid fires every 8 clocks
+    dut.ui_in.value = (1 << 3)  # en=1
+    await spi_write_byte(dut, 0x13, 0x01)  # bypass_vn=1
+
+    # Wait and verify byte_valid fires when enabled
+    await wait_clocks(dut, 20)
+    byte_valid_enabled = False
+    for _ in range(50):
+        await RisingEdge(dut.clk)
+        uio_val = dut.uio_out.value
+        binval = uio_val.binstr
+        if len(binval) == 8 and binval[7] == '1':
+            byte_valid_enabled = True
+            break
+
+    dut._log.info(f"byte_valid with en=1, bypass_vn=1: {byte_valid_enabled}")
+    assert byte_valid_enabled, "byte_valid should fire when en=1 and bypass_vn=1"
 
     # Disable: en=0
     dut.ui_in.value = 0
-    # Wait for 2 more measurement windows
-    await wait_clocks(dut, 2200)
-    count_disabled = await spi_read_freq_count(dut)
-    dut._log.info(f"RO0 count with en=0: {count_disabled}")
+    await wait_clocks(dut, 20)
 
-    # The RO is gated by 'en'. In sim, sim_ro only toggles when en=1.
-    # After disabling, no new edges -> count in new windows should be 0.
-    assert count_disabled == 0, \
-        f"Expected freq count = 0 when disabled, got {count_disabled}"
-    dut._log.info("PASS – RO frequency counter stops when en=0")
+    # Verify byte_valid does NOT fire when disabled
+    byte_valid_disabled = False
+    for _ in range(50):
+        await RisingEdge(dut.clk)
+        uio_val = dut.uio_out.value
+        binval = uio_val.binstr
+        if len(binval) == 8 and binval[7] == '1':
+            byte_valid_disabled = True
+            break
+
+    dut._log.info(f"byte_valid with en=0: {byte_valid_disabled}")
+    assert not byte_valid_disabled, \
+        "byte_valid should not fire when en=0 (RO and shift register gated)"
+    dut._log.info("PASS – byte_valid stops when en=0")
 
 
 @cocotb.test()
@@ -434,11 +452,14 @@ async def test_byte_valid_and_random_output(dut):
     dut.ui_in.value = (1 << 3)
 
     # Monitor byte_valid (uio_out[0]) for 500 cycles
+    # Note: uio_out may have high-Z bits (SPI MISO), so use binstr to check bit 0
     byte_valid_seen = False
     for _ in range(500):
         await RisingEdge(dut.clk)
         uio_val = dut.uio_out.value
-        if uio_val.is_resolvable and (int(uio_val) & 1) == 1:
+        binval = uio_val.binstr
+        # binstr is MSB-first: bit 0 is index 7
+        if len(binval) == 8 and binval[7] == '1':
             byte_valid_seen = True
             break
 
@@ -497,11 +518,13 @@ async def test_ctrl_reg_bypass_vn(dut):
     await wait_clocks(dut, 20)
 
     # Monitor byte_valid (uio_out[0]) - should fire within a few cycles
+    # Note: uio_out may have high-Z bits, so use binstr to check bit 0
     byte_valid_seen = False
     for _ in range(50):
         await RisingEdge(dut.clk)
         uio_val = dut.uio_out.value
-        if uio_val.is_resolvable and (int(uio_val) & 1) == 1:
+        binval = uio_val.binstr
+        if len(binval) == 8 and binval[7] == '1':
             byte_valid_seen = True
             break
 

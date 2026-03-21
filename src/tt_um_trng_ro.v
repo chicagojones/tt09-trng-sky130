@@ -157,7 +157,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     wire ro_to_measure = ro_raw_signals[freq_mux_sel];
     ro_freq_counter fc_inst (
         .clk(clk),
-        .rst_n(rst_n | ~freq_counter_reset),
+        .rst_n(rst_n & ~freq_counter_reset),
         .ro_in(ro_to_measure),
         .count(freq_count)
     );
