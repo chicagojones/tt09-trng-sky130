@@ -1,5 +1,5 @@
 {
-  "DESIGN_NAME": "tt_um_trng_ro",
+  "DESIGN_NAME": "tt_um_chicagojones_trng_ro",
   "VERILOG_FILES": [
     "dir::tt_um_trng_ro.v",
     "dir::health_monitor.v",

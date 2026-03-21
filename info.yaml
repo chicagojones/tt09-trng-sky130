@@ -5,11 +5,13 @@ project:
   author: "Josh (Gemini CLI)"
   language: "Verilog"
   clock_hz: 10000000
-
-# Specify the depth and width of your design.
-# A single tile is 1x1.
-# 1x1 tile is 160um x 225um.
-tiles: "2x1"
+  tiles: "2x1"
+  top_module: "tt_um_chicagojones_trng_ro"
+  source_files:
+    - "tt_um_trng_ro.v"
+    - "health_monitor.v"
+    - "auto_tuner.v"
+    - "von_neumann.v"
 
 # Pins assignments
 # ui_in[7:0] : Dedicated inputs
@@ -23,9 +25,9 @@ tiles: "2x1"
 
 pinout:
   # Inputs
-  ui[0]: "unused"
-  ui[1]: "unused"
-  ui[2]: "unused"
+  ui[0]: ""
+  ui[1]: ""
+  ui[2]: ""
   ui[3]: "Enable (1=On, 0=Off)"
   ui[4]: "Auto Mode Enable"
   ui[5]: "Tunable Select Bit 0"
@@ -44,13 +46,13 @@ pinout:
 
   # Bidirectional
   uio[0]: "Byte Valid Strobe"
-  uio[1]: "unused"
-  uio[2]: "unused"
-  uio[3]: "unused"
-  uio[4]: "unused"
-  uio[5]: "unused"
-  uio[6]: "unused"
-  uio[7]: "unused"
+  uio[1]: ""
+  uio[2]: ""
+  uio[3]: ""
+  uio[4]: ""
+  uio[5]: ""
+  uio[6]: ""
+  uio[7]: ""
 
 # Do not change!
 yaml_version: 6

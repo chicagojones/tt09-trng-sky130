@@ -1,6 +1,6 @@
 `default_nettype none
 
-module tt_um_trng_ro (
+module tt_um_chicagojones_trng_ro (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
