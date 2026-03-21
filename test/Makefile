@@ -10,7 +10,7 @@ PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann
 ifneq ($(GATES),yes)
 
 # RTL simulation
-COMPILE_ARGS += -DCOCOTB_SIM=1
+COMPILE_ARGS += -DCOCOTB_SIM=1 -DSIM=1
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 else
 
