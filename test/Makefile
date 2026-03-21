@@ -5,7 +5,7 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann.v uart_tx.v spi_follower.v ro_delay_buf.v
+PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann.v uart_tx.v spi_follower.v
 
 ifneq ($(GATES),yes)
 
@@ -16,7 +16,7 @@ VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 else
 
 # Gate level simulation
-# Use the default pipeline logic, but ensure SIM is defined so our ro_delay_buf works.
+# Use the default pipeline logic, but ensure SIM is defined
 COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 

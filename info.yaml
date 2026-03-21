@@ -14,7 +14,6 @@ project:
     - "von_neumann.v"
     - "uart_tx.v"
     - "spi_follower.v"
-    - "ro_delay_buf.v"
 
 # Pins assignments
 # ui_in[7:0] : Dedicated inputs
