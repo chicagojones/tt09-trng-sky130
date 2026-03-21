@@ -1,5 +1,6 @@
 # Tiny Tapeout project information
 project:
+  wokwi_id:     0      # Set to 0 for HDL-only projects
   title:        "Scientist TRNG (Sky130)"      # Project title
   author:       "Josh (Gemini CLI)"      # Your name
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
