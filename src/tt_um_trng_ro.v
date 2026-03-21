@@ -204,7 +204,6 @@ module ro_tunable (
     reg         feedback_reg;
 
     // Behavioral delay for simulation stability
-    // Synthesis tools will treat this as a direct assignment or wire.
     always @(*) begin
         #1 feedback_reg = feedback;
     end
@@ -218,23 +217,33 @@ module ro_tunable (
                       (sel == 3'd6) ? chain[26] :
                                       chain[30];
 
+    `ifdef SIM
+    assign chain[0] = ~(feedback_reg & en);
+    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (
         .A(feedback_reg),
         .B(en),
         .Y(chain[0])
     );
+    /* verilator lint_on PINMISSING */
+    `endif
     
     genvar i;
     generate
         for (i = 1; i < 32; i = i + 1) begin : ro_inverters
+            `ifdef SIM
+            assign chain[i] = ~chain[i-1];
+            `else
+            /* verilator lint_off PINMISSING */
             sky130_fd_sc_hd__inv_1 inv_inst (
                 .A(chain[i-1]),
                 .Y(chain[i])
             );
+            /* verilator lint_on PINMISSING */
+            `endif
         end
     endgenerate
-    /* verilator lint_on PINMISSING */
 
     assign ro_out = chain[0];
 endmodule
@@ -254,25 +263,35 @@ module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
         #1 feedback_reg = chain[LENGTH-1];
     end
 
+    `ifdef SIM
+    assign chain[0] = ~(feedback_reg & en);
+    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (
         .A(feedback_reg),
         .B(en),
         .Y(chain[0])
     );
+    /* verilator lint_on PINMISSING */
+    `endif
     
     genvar i;
     generate
         for (i = 1; i < LENGTH; i = i + 1) begin : ro_inverters
+            `ifdef SIM
+            assign chain[i] = ~chain[i-1];
+            `else
+            /* verilator lint_off PINMISSING */
             if (DRIVE == 4)
                 sky130_fd_sc_hd__inv_4 inv_inst (.A(chain[i-1]), .Y(chain[i]));
             else if (DRIVE == 2)
                 sky130_fd_sc_hd__inv_2 inv_inst (.A(chain[i-1]), .Y(chain[i]));
             else
                 sky130_fd_sc_hd__inv_1 inv_inst (.A(chain[i-1]), .Y(chain[i]));
+            /* verilator lint_on PINMISSING */
+            `endif
         end
     endgenerate
-    /* verilator lint_on PINMISSING */
 
     assign ro_out = chain[0];
 endmodule
