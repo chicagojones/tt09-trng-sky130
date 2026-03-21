@@ -15,7 +15,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
 );
 
     wire en         = ui_in[3];
-    wire auto_en    = ui_in[4];
+    wire auto_en_pin = ui_in[4];
     wire [2:0] man_sel = ui_in[7:5];
 
     // SPI signals
@@ -42,6 +42,25 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     reg  [7:0] reg_data_in;
     wire [7:0] reg_data_out;
     wire       reg_write_en;
+
+    // Control Register (Address 0x13)
+    // Bit 0: bypass_vn (1 = use raw sampled bits)
+    // Bit 1: force_manual (1 = ignore auto_en pin)
+    // Bit 2: mask_alarm (1 = ignore NIST alarm for auto-tuning)
+    // Bits [4:3]: uo_mux_sel
+    reg [7:0] ctrl_reg;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ctrl_reg <= 8'h00;
+        end else if (reg_write_en && reg_addr == 7'h13) begin
+            ctrl_reg <= reg_data_out;
+        end
+    end
+
+    wire bypass_vn    = ctrl_reg[0];
+    wire force_manual = ctrl_reg[1];
+    wire mask_alarm   = ctrl_reg[2];
+    wire [1:0] uo_sel  = ctrl_reg[4:3];
 
     // Frequency Mux Control
     reg [2:0] freq_mux_sel;
@@ -77,17 +96,16 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .reg_write_en(reg_write_en)
     );
 
-    // Register Read Multiplexer (Extended for 24-bit counts)
+    // Register Read Multiplexer
     always @(*) begin
         case (reg_addr)
-            // Frequency Byte (0x00 - 0x02)
             7'h00: reg_data_in = freq_count[7:0];
             7'h01: reg_data_in = freq_count[15:8];
             7'h02: reg_data_in = freq_count[23:16];
-            
-            7'h10: reg_data_in = {3'b0, alarm, 1'b0, freq_mux_sel}; // Status / Counter Sel
-            7'h11: reg_data_in = out_reg; // Last random byte
-            7'h12: reg_data_in = {5'b0, ro_sel}; // Actual RO sel being used by TRNG
+            7'h10: reg_data_in = {3'b0, alarm, 1'b0, freq_mux_sel};
+            7'h11: reg_data_in = out_reg;
+            7'h12: reg_data_in = {5'b0, ro_sel};
+            7'h13: reg_data_in = ctrl_reg;
             default: reg_data_in = 8'h00;
         endcase
     end
@@ -108,9 +126,9 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     auto_tuner tuner_inst (
         .clk(clk),
         .rst_n(rst_n),
-        .auto_en(auto_en),
+        .auto_en(force_manual ? 1'b0 : auto_en_pin),
         .manual_sel(man_sel),
-        .alarm(alarm),
+        .alarm(mask_alarm ? 1'b0 : alarm),
         .current_sel(ro_sel),
         .reset_monitor(reset_monitor)
     );
@@ -129,7 +147,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     wire ro_to_measure = ro_raw_signals[freq_mux_sel];
     ro_freq_counter fc_inst (
         .clk(clk),
-        .rst_n(rst_n | ~freq_counter_reset), // Reset on mux change
+        .rst_n(rst_n | ~freq_counter_reset),
         .ro_in(ro_to_measure),
         .count(freq_count)
     );
@@ -160,6 +178,10 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     reg [2:0] bit_count;
     reg       byte_valid;
 
+    // Use either whitened or raw sampled bits based on ctrl_reg
+    wire active_bit   = bypass_vn ? sampled_bit : vn_bit;
+    wire active_valid = bypass_vn ? 1'b1        : vn_valid;
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             shift_reg  <= 8'd0;
@@ -168,10 +190,10 @@ module tt_um_chicagojones_tt09_trng_sky130 (
             byte_valid <= 1'b0;
         end else begin
             byte_valid <= 1'b0;
-            if (en && vn_valid) begin
-                shift_reg <= {shift_reg[6:0], vn_bit};
+            if (en && active_valid) begin
+                shift_reg <= {shift_reg[6:0], active_bit};
                 if (bit_count == 3'd7) begin
-                    out_reg    <= {shift_reg[6:0], vn_bit};
+                    out_reg    <= {shift_reg[6:0], active_bit};
                     byte_valid <= 1'b1;
                     bit_count  <= 3'd0;
                 end else begin
@@ -182,7 +204,19 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     end
 
     // -- Output Assignments --
-    assign uo_out = out_reg;
+    // Output Mux logic for debugging
+    reg [7:0] final_uo_out;
+    always @(*) begin
+        case (uo_sel)
+            2'b00:   final_uo_out = out_reg;
+            2'b01:   final_uo_out = freq_count[7:0];
+            2'b10:   final_uo_out = {6'b0, alarm, vn_valid};
+            2'b11:   final_uo_out = {7'b0, sampled_bit};
+            default: final_uo_out = out_reg;
+        endcase
+    end
+
+    assign uo_out = final_uo_out;
     
     // Bidirectional pin configuration
     assign uio_out[0]   = byte_valid;
@@ -194,7 +228,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     
     assign uio_oe       = 8'b01000011; 
 
-    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, spi_mosi};
+    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, spi_mosi, reg_data_out[7:3]};
 
 endmodule
 
@@ -242,15 +276,14 @@ endmodule
  * Tunable Ring Oscillator
  */
 module ro_tunable (
-    input  wire       clk,      // Used for simulation only
-    input  wire       rst_n,    // Used for simulation only
+    input  wire       clk,      
+    input  wire       rst_n,    
     input  wire       en,
     input  wire [2:0] sel,
     output wire       ro_out
 );
     
     `ifdef SIM
-    // Synchronous toggle for fast simulation
     reg sim_ro;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) sim_ro <= 1'b0;
@@ -289,13 +322,12 @@ endmodule
  * Fixed Length Ring Oscillator
  */
 module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
-    input  wire       clk,      // Used for simulation only
-    input  wire       rst_n,    // Used for simulation only
+    input  wire       clk,      
+    input  wire       rst_n,    
     input  wire       en,
     output wire       ro_out
 );
     `ifdef SIM
-    // Synchronous toggle for fast simulation
     reg sim_ro;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) sim_ro <= 1'b0;
@@ -305,8 +337,13 @@ module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
     `else
     (* keep *) wire [LENGTH:0] chain;
 
+    `ifdef SIM
+    assign chain[0] = ~(chain[LENGTH-1] & en);
+    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (.A(chain[LENGTH-1]), .B(en), .Y(chain[0]));
+    /* verilator lint_on PINMISSING */
+    `endif
     
     genvar i;
     generate
