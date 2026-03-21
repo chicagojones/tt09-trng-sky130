@@ -80,5 +80,6 @@
   "MAGIC_DEF_LABELS": 0,
 
   "//": "Only export pin area in LEF (without any connected nets)",
+  "KEEP_HIERARCHY": ["ro_delay_buf"],
   "MAGIC_WRITE_LEF_PINONLY": 1
 }

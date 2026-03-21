@@ -16,10 +16,8 @@ VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 else
 
 # Gate level simulation
-# Define UNIT_DELAY to prevent zero-delay infinite loops in ROs
-COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1 -DUNIT_DELAY=\#1 -DUNIT_DELAY_RISE=1 -DUNIT_DELAY_FALL=1
-VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
-VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
+# Use the default pipeline logic, but ensure SIM is defined so our ro_delay_buf works.
+COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 
 endif
