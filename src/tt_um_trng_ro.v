@@ -43,8 +43,25 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     wire [7:0] reg_data_out;
     wire       reg_write_en;
 
-    // Frequency Counter Outputs (24-bit each)
-    wire [23:0] freq_counts [7:0];
+    // Frequency Mux Control
+    reg [2:0] freq_mux_sel;
+    reg [2:0] last_freq_mux_sel;
+    wire      freq_counter_reset = (freq_mux_sel != last_freq_mux_sel);
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            freq_mux_sel <= 3'd0;
+            last_freq_mux_sel <= 3'd0;
+        end else begin
+            last_freq_mux_sel <= freq_mux_sel;
+            if (reg_write_en && reg_addr == 7'h10) begin
+                freq_mux_sel <= reg_data_out[2:0];
+            end
+        end
+    end
+
+    // Frequency Counter Output (24-bit)
+    wire [23:0] freq_count;
 
     // SPI Follower
     spi_follower spi_inst (
@@ -60,41 +77,17 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .reg_write_en(reg_write_en)
     );
 
-    // Register Read Multiplexer (Extended for 24-bit counts)
+    // Register Read Multiplexer
     always @(*) begin
         case (reg_addr)
-            // Low Bytes (0x00 - 0x07)
-            7'h00: reg_data_in = freq_counts[0][7:0];
-            7'h01: reg_data_in = freq_counts[1][7:0];
-            7'h02: reg_data_in = freq_counts[2][7:0];
-            7'h03: reg_data_in = freq_counts[3][7:0];
-            7'h04: reg_data_in = freq_counts[4][7:0];
-            7'h05: reg_data_in = freq_counts[5][7:0];
-            7'h06: reg_data_in = freq_counts[6][7:0];
-            7'h07: reg_data_in = freq_counts[7][7:0];
+            // Frequency Byte (0x00 - 0x02)
+            7'h00: reg_data_in = freq_count[7:0];
+            7'h01: reg_data_in = freq_count[15:8];
+            7'h02: reg_data_in = freq_count[23:16];
             
-            // Middle Bytes (0x08 - 0x0F)
-            7'h08: reg_data_in = freq_counts[0][15:8];
-            7'h09: reg_data_in = freq_counts[1][15:8];
-            7'h0A: reg_data_in = freq_counts[2][15:8];
-            7'h0B: reg_data_in = freq_counts[3][15:8];
-            7'h0C: reg_data_in = freq_counts[4][15:8];
-            7'h0D: reg_data_in = freq_counts[5][15:8];
-            7'h0E: reg_data_in = freq_counts[6][15:8];
-            7'h0F: reg_data_in = freq_counts[7][15:8];
-
-            // High Bytes (0x18 - 0x1F)
-            7'h18: reg_data_in = freq_counts[0][23:16];
-            7'h19: reg_data_in = freq_counts[1][23:16];
-            7'h1A: reg_data_in = freq_counts[2][23:16];
-            7'h1B: reg_data_in = freq_counts[3][23:16];
-            7'h1C: reg_data_in = freq_counts[4][23:16];
-            7'h1D: reg_data_in = freq_counts[5][23:16];
-            7'h1E: reg_data_in = freq_counts[6][23:16];
-            7'h1F: reg_data_in = freq_counts[7][23:16];
-
-            7'h10: reg_data_in = {3'b0, alarm, 1'b0, ro_sel}; // Status
+            7'h10: reg_data_in = {3'b0, alarm, 1'b0, freq_mux_sel}; // Status / Counter Sel
             7'h11: reg_data_in = out_reg; // Last random byte
+            7'h12: reg_data_in = {5'b0, ro_sel}; // Actual RO sel being used by TRNG
             default: reg_data_in = 8'h00;
         endcase
     end
@@ -132,18 +125,14 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .ro_outs(ro_raw_signals)
     );
 
-    // Frequency Counters for all 8 ROs
-    genvar k;
-    generate
-        for (k = 0; k < 8; k = k + 1) begin : freq_bank
-            ro_freq_counter fc_inst (
-                .clk(clk),
-                .rst_n(rst_n),
-                .ro_in(ro_raw_signals[k]),
-                .count(freq_counts[k])
-            );
-        end
-    endgenerate
+    // Multiplexed Frequency Counter
+    wire ro_to_measure = ro_raw_signals[freq_mux_sel];
+    ro_freq_counter fc_inst (
+        .clk(clk),
+        .rst_n(rst_n | ~freq_counter_reset), // Reset on mux change
+        .ro_in(ro_to_measure),
+        .count(freq_count)
+    );
 
     // -- NIST Health Monitor (RCT & APT) --
     nist_health_monitor monitor_inst (
