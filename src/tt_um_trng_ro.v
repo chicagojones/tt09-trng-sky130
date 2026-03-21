@@ -79,6 +79,15 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         end
     end
 
+    // Scratchpad Register (Address 0x20) - for SPI link verification
+    reg [7:0] scratch_reg;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            scratch_reg <= 8'h00;
+        else if (reg_write_en && reg_addr == 7'h20)
+            scratch_reg <= reg_data_out;
+    end
+
     // Frequency Counter Output (24-bit)
     wire [23:0] freq_count;
 
@@ -106,6 +115,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
             7'h11: reg_data_in = out_reg;
             7'h12: reg_data_in = {5'b0, ro_sel};
             7'h13: reg_data_in = ctrl_reg;
+            7'h20: reg_data_in = scratch_reg;
             default: reg_data_in = 8'h00;
         endcase
     end
@@ -276,13 +286,12 @@ endmodule
  * Tunable Ring Oscillator
  */
 module ro_tunable (
-    input  wire       clk,      
-    input  wire       rst_n,    
+    input  wire       clk,
+    input  wire       rst_n,
     input  wire       en,
     input  wire [2:0] sel,
     output wire       ro_out
 );
-    
     `ifdef SIM
     reg sim_ro;
     always @(posedge clk or negedge rst_n) begin
@@ -305,7 +314,7 @@ module ro_tunable (
 
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (.A(feedback), .B(en), .Y(chain[0]));
-    
+
     genvar i;
     generate
         for (i = 1; i < 32; i = i + 1) begin : ro_inverters
@@ -322,8 +331,8 @@ endmodule
  * Fixed Length Ring Oscillator
  */
 module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
-    input  wire       clk,      
-    input  wire       rst_n,    
+    input  wire       clk,
+    input  wire       rst_n,
     input  wire       en,
     output wire       ro_out
 );
@@ -337,14 +346,9 @@ module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
     `else
     (* keep *) wire [LENGTH:0] chain;
 
-    `ifdef SIM
-    assign chain[0] = ~(chain[LENGTH-1] & en);
-    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (.A(chain[LENGTH-1]), .B(en), .Y(chain[0]));
-    /* verilator lint_on PINMISSING */
-    `endif
-    
+
     genvar i;
     generate
         for (i = 1; i < LENGTH; i = i + 1) begin : ro_inverters

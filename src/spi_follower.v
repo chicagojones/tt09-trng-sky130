@@ -2,23 +2,23 @@
 
 /**
  * Enhanced SPI Follower (Register Based)
- * 
+ *
  * Supports reading internal status and characterization registers.
  * Transaction:
  *   1. Master sends Command Byte (Address[6:0], 1=Read/0=Write)
  *   2. Master sends Dummy/Data Byte, Slave returns Register Value
- * 
+ *
  * Mode 0 (CPOL=0, CPHA=0).
  */
 module spi_follower (
     input  wire        clk,      // System clock
     input  wire        rst_n,    // System reset
-    
+
     // External SPI pins
-    input  wire        sclk,     
-    input  wire        cs_n,     
-    input  wire        mosi,     
-    output wire        miso,     
+    input  wire        sclk,
+    input  wire        cs_n,
+    input  wire        mosi,
+    output wire        miso,
 
     // Internal Register Interface
     output reg  [6:0]  reg_addr,
@@ -42,7 +42,6 @@ module spi_follower (
     end
 
     wire cs_active   = ~cs_sync[1];
-    wire cs_falling  =  cs_sync[2] & ~cs_sync[1];
     wire sclk_rising = ~sclk_sync[2] &  sclk_sync[1];
     wire sclk_falling=  sclk_sync[2] & ~sclk_sync[1];
     wire mosi_data   =  mosi_sync[1];
@@ -53,6 +52,7 @@ module spi_follower (
     reg [7:0] shift_out;
     reg       byte_received;
     reg       is_second_byte;
+    reg       read_write_n;   // 1=Read, 0=Write (from command byte bit[0])
 
     assign reg_data_out = shift_in;
 
@@ -65,14 +65,15 @@ module spi_follower (
             is_second_byte <= 1'b0;
             reg_addr       <= 7'd0;
             reg_write_en   <= 1'b0;
+            read_write_n   <= 1'b0;
         end else begin
             byte_received <= 1'b0;
             reg_write_en  <= 1'b0;
 
-            if (cs_falling) begin
+            if (!cs_active) begin
                 bit_count      <= 4'd0;
                 is_second_byte <= 1'b0;
-            end else if (cs_active) begin
+            end else begin
                 // Shift in on rising edge (Mode 0)
                 if (sclk_rising) begin
                     shift_in <= {shift_in[6:0], mosi_data};
@@ -89,20 +90,25 @@ module spi_follower (
                     if (!is_second_byte) begin
                         // This was the Command Byte
                         reg_addr       <= shift_in[7:1];
-                        // Prepare data for next byte shift-out
-                        // We use reg_data_in which is already indexed by reg_addr
-                        shift_out      <= reg_data_in; 
+                        read_write_n   <= shift_in[0];
                         is_second_byte <= 1'b1;
                     end else begin
                         // This was the Data Byte
-                        reg_write_en   <= ~reg_addr[0]; // Example write logic if needed
-                        is_second_byte <= 1'b0; // Reset for multi-byte or wait for CS
+                        if (!read_write_n) reg_write_en <= 1'b1;
                     end
                 end
 
-                // Shift out on falling edge
-                if (sclk_falling) begin
+                // Shift out on falling edge during data phase
+                if (sclk_falling && is_second_byte) begin
                     shift_out <= {shift_out[6:0], 1'b0};
+                end
+
+                // Continuously reload shift_out while idle in data phase
+                // (is_second_byte=1, bit_count=0, SCLK low). This ensures
+                // correct data even after the command byte's trailing falling
+                // edge. Listed last so it wins over the sclk_falling shift.
+                if (is_second_byte && bit_count == 4'd0 && !sclk_sync[1]) begin
+                    shift_out <= reg_data_in;
                 end
             end
         end
