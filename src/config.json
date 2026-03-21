@@ -1,5 +1,5 @@
 {
-  "DESIGN_NAME": "tt_um_chicagojones_trng_sky130",
+  "DESIGN_NAME": "tt_um_chicagojones_tt09_trng_sky130",
   "VERILOG_FILES": [
     "dir::tt_um_trng_ro.v",
     "dir::nist_health_monitor.v",

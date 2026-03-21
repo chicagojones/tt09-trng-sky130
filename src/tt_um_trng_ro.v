@@ -3,7 +3,7 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off UNDRIVEN */
 
-module tt_um_chicagojones_trng_sky130 (
+module tt_um_chicagojones_tt09_trng_sky130 (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
