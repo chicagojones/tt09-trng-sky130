@@ -4,12 +4,12 @@ project:
   title:        "Scientist TRNG (Sky130)"      # Project title
   author:       "Josh (Gemini CLI)"      # Your name
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "8-RO bank TRNG with NIST health monitors and frequency characterization via SPI."      # One line description of what your project does
+  description:  "8-RO bank TRNG with NIST health monitors and 6 chaotic whiteners."      # One line description of what your project does
   language:     "Verilog" # other examples include Amaranth, VHDL, etc
   clock_hz:     10000000       # Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "1x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+  tiles: "2x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
   top_module:  "tt_um_chicagojones_tt09_trng_sky130"
@@ -23,6 +23,12 @@ project:
     - "uart_tx.v"
     - "spi_follower.v"
     - "ro_freq_counter.v"
+    - "cond_tent_map.v"
+    - "cond_coupled_tent.v"
+    - "cond_logistic.v"
+    - "cond_bernoulli.v"
+    - "cond_lorenz.v"
+    - "cond_lfsr.v"
 
 # Pinout-related assignments
 pinout:
