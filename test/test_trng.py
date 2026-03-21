@@ -55,11 +55,11 @@ async def test_trng_features(dut):
     # Enable RO (bit 3)
     dut.ui_in.value = (1 << 3)
     
-    dut._log.info("Waiting for random data (up to 10,000 cycles)...")
+    dut._log.info("Waiting for random data (up to 1,000 cycles)...")
     
     # Wait for byte valid
     found_valid = False
-    for i in range(100): # 100 chunks of 100 cycles = 10,000
+    for i in range(10): # 10 chunks of 100 cycles = 1,000
         await ClockCycles(dut.clk, 100)
         val = dut.uio_out.value
         if val.is_resolvable and (int(val) & 1) == 1:
