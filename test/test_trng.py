@@ -1,6 +1,7 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
+import os
 
 async def spi_read_byte(dut):
     """Simple SPI Master read (Mode 0)"""
@@ -29,11 +30,11 @@ async def spi_read_byte(dut):
 
 @cocotb.test()
 async def test_trng_features(dut):
-    # Skip tests for gate-level simulation as asynchronous ROs cannot be 
-    # simulated accurately without SDF timing information.
-    import os
+    # Detect if we are in Gate-Level Simulation (GLS)
+    # Asynchronous Ring Oscillators cannot be simulated accurately 
+    # without SDF timing information in GLS.
     if os.environ.get('GATES') == 'yes':
-        dut._log.info("Gate-level simulation detected. Skipping tests.")
+        dut._log.info("Gate-level simulation detected. Skipping tests for asynchronous RO logic.")
         return
 
     # Create a 10MHz clock
@@ -58,23 +59,9 @@ async def test_trng_features(dut):
     
     # Wait for byte valid
     found_valid = False
-    ro_toggled = False
-    last_ro = None
-    
     for i in range(50000):
         await RisingEdge(dut.clk)
         
-        # Check if RO is alive
-        # In GLS, ro_raw might be deep in the hierarchy, but Cocotb finds it.
-        try:
-            current_ro = dut.ro_raw.value
-            if last_ro is not None and current_ro != last_ro:
-                ro_toggled = True
-            last_ro = current_ro
-        except AttributeError:
-            # Fallback for GLS if hierarchy is flattened
-            pass
-
         val = dut.uio_out.value
         if val.is_resolvable and (int(val) & 1) == 1:
             found_valid = True
@@ -89,11 +76,6 @@ async def test_trng_features(dut):
         spi_val = await spi_read_byte(dut)
         dut._log.info(f"SPI Read Value: {spi_val:02x}")
     else:
-        if not ro_toggled:
-            # If we couldn't find the ro_raw signal, we can't be sure, 
-            # but usually the testbench is for RTL verification mainly.
-            dut._log.warning("Could not receive byte. If this is GLS, the whitener may be filtering perfect simulated bits.")
-        else:
-            dut._log.warning("RO is toggling, but whitener produced no data. Simulated entropy is too low/regular.")
+        dut._log.error("Timeout waiting for TRNG byte")
 
     dut._log.info("Test finished.")
