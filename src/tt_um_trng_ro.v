@@ -166,7 +166,6 @@ module trng_core (
     ro_tunable ro0 (.en(en), .sel(sel), .ro_out(ro_outs[0]));
 
     // RO 1-7: Fixed lengths (Primes to avoid resonance)
-    // Varying drive strength to diversify frequencies further
     ro_fixed #(.LENGTH(13), .DRIVE(1)) ro1 (.en(en), .ro_out(ro_outs[1]));
     ro_fixed #(.LENGTH(17), .DRIVE(2)) ro2 (.en(en), .ro_out(ro_outs[2]));
     ro_fixed #(.LENGTH(19), .DRIVE(4)) ro3 (.en(en), .ro_out(ro_outs[3]));
@@ -201,12 +200,10 @@ module ro_tunable (
 );
     (* keep *) wire [31:0] chain;
     wire        feedback;
-    reg         feedback_reg;
+    wire        feedback_delayed;
 
-    // Behavioral delay for simulation stability
-    always @(*) begin
-        #1 feedback_reg = feedback;
-    end
+    // Use the delay buffer to break zero-delay loops in GLS
+    ro_delay_buf delay_inst (.in(feedback), .out(feedback_delayed));
 
     assign feedback = (sel == 3'd0) ? chain[2]  :
                       (sel == 3'd1) ? chain[6]  :
@@ -218,11 +215,11 @@ module ro_tunable (
                                       chain[30];
 
     `ifdef SIM
-    assign chain[0] = ~(feedback_reg & en);
+    assign chain[0] = ~(feedback_delayed & en);
     `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (
-        .A(feedback_reg),
+        .A(feedback_delayed),
         .B(en),
         .Y(chain[0])
     );
@@ -256,19 +253,16 @@ module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
     output wire ro_out
 );
     (* keep *) wire [LENGTH:0] chain;
-    wire        feedback;
-    reg         feedback_reg;
+    wire        feedback_delayed;
 
-    always @(*) begin
-        #1 feedback_reg = chain[LENGTH-1];
-    end
+    ro_delay_buf delay_inst (.in(chain[LENGTH-1]), .out(feedback_delayed));
 
     `ifdef SIM
-    assign chain[0] = ~(feedback_reg & en);
+    assign chain[0] = ~(feedback_delayed & en);
     `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (
-        .A(feedback_reg),
+        .A(feedback_delayed),
         .B(en),
         .Y(chain[0])
     );

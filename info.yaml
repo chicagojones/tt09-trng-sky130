@@ -5,8 +5,7 @@ project:
   author: "Josh (Gemini CLI)"
   language: "Verilog"
   clock_hz: 10000000
-  # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "2x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+  tiles: "1x2"
   top_module: "tt_um_chicagojones_trng_ro"
   source_files:
     - "tt_um_trng_ro.v"
@@ -15,6 +14,7 @@ project:
     - "von_neumann.v"
     - "uart_tx.v"
     - "spi_follower.v"
+    - "ro_delay_buf.v"
 
 # Pins assignments
 # ui_in[7:0] : Dedicated inputs
