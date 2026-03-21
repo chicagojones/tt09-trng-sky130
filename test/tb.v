@@ -6,12 +6,15 @@
 */
 module tb ();
 
-  // Dump the signals to a FST file. You can view it with gtkwave or surfer.
+  // Dump the signals to a FST file.
+  // We only do this if specifically requested to save time in CI.
+  `ifdef DUMP_WAVES
   initial begin
     $dumpfile("tb.fst");
     $dumpvars(0, tb);
     #1;
   end
+  `endif
 
   // Wire up the inputs and outputs:
   reg clk;
@@ -27,8 +30,8 @@ module tb ();
   wire VGND = 1'b0;
 `endif
 
-  // Replace tt_um_example with your module name:
-  tt_um_example user_project (
+  // Instantiate the actual project
+  tt_um_chicagojones_tt09_trng_sky130 user_project (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
