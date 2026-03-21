@@ -16,10 +16,10 @@ VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 else
 
 # Gate level simulation
-# 1. We MUST define USE_PG_PIN because the Tiny Tapeout netlist includes VPWR/VGND ports.
-# 2. We MUST define UNIT_DELAY to prevent zero-delay loop stalls in the Ring Oscillators.
-# 3. We MUST include the PDK models for the cells used in the netlist.
-COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1 -DUSE_PG_PIN -DUNIT_DELAY=\#1 -DUNIT_DELAY_RISE=1 -DUNIT_DELAY_FALL=1
+# 1. Use USE_POWER_PINS (the official Sky130 macro for this shuttle)
+# 2. UNIT_DELAY prevents zero-delay loop stalls
+# 3. Include PDK models
+COMPILE_ARGS    += -DCOCOTB_SIM=1 -DGL_TEST -DFUNCTIONAL -DUSE_POWER_PINS -DSIM -DUNIT_DELAY=\#1 -DUNIT_DELAY_RISE=1 -DUNIT_DELAY_FALL=1
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
