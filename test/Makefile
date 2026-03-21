@@ -10,23 +10,21 @@ PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann
 ifneq ($(GATES),yes)
 
 # RTL simulation
-COMPILE_ARGS += -DCOCOTB_SIM=1 -DSIM=1 -DDUMP_WAVES
+COMPILE_ARGS += -DCOCOTB_SIM=1 -DSIM=1
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-VERILOG_SOURCES += $(PWD)/tb.v
 
 else
 
 # Gate level simulation
-COMPILE_ARGS    += -DCOCOTB_SIM=1 -DGL_TEST -DFUNCTIONAL -DUSE_POWER_PINS -DSIM=1
+COMPILE_ARGS    += -DCOCOTB_SIM=1 -DSIM=1 -DUSE_POWER_PINS -DUNIT_DELAY=\#1 -DUNIT_DELAY_RISE=1 -DUNIT_DELAY_FALL=1
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
-VERILOG_SOURCES += $(PWD)/tb.v
 
 endif
 
 # TOPLEVEL is the name of the toplevel module in your Verilog or VHDL file
-TOPLEVEL = tb
+TOPLEVEL = tt_um_chicagojones_tt09_trng_sky130
 
 # MODULE is the basename of the Python test file
 MODULE = test_trng
