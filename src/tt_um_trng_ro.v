@@ -102,6 +102,9 @@ module tt_um_chicagojones_trng_ro (
     assign uio_out[7:1] = 7'b0;
     assign uio_oe       = 8'b00000001; // uio[0] is output, rest are inputs
 
+    // Use a dummy wire to "use" otherwise unused inputs to satisfy the linter
+    wire _unused = &{ui_in[2:0], uio_in, ena, ro_raw};
+
 endmodule
 
 /* 
@@ -181,7 +184,7 @@ module ro_tunable (
     assign #1 chain[0] = ~(feedback & en);
     `else
     /* verilator lint_off PINMISSING */
-    sky130_fd_sc_hd__nand2_1 nand_inst (
+    sky130_fd_sc_hd__nand2_1 #1 nand_inst (
         .A(feedback),
         .B(en),
         .Y(chain[0])
@@ -196,7 +199,7 @@ module ro_tunable (
             assign #1 chain[i] = ~chain[i-1];
             `else
             /* verilator lint_off PINMISSING */
-            sky130_fd_sc_hd__inv_1 inv_inst (
+            sky130_fd_sc_hd__inv_1 #1 inv_inst (
                 .A(chain[i-1]),
                 .Y(chain[i])
             );
@@ -221,7 +224,7 @@ module ro_fixed #(parameter LENGTH = 15) (
     assign #1 chain[0] = ~(chain[LENGTH-1] & en);
     `else
     /* verilator lint_off PINMISSING */
-    sky130_fd_sc_hd__nand2_1 nand_inst (
+    sky130_fd_sc_hd__nand2_1 #1 nand_inst (
         .A(chain[LENGTH-1]),
         .B(en),
         .Y(chain[0])
@@ -236,7 +239,7 @@ module ro_fixed #(parameter LENGTH = 15) (
             assign #1 chain[i] = ~chain[i-1];
             `else
             /* verilator lint_off PINMISSING */
-            sky130_fd_sc_hd__inv_1 inv_inst (
+            sky130_fd_sc_hd__inv_1 #1 inv_inst (
                 .A(chain[i-1]),
                 .Y(chain[i])
             );
