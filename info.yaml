@@ -5,7 +5,7 @@ project:
   author: "Josh (Gemini CLI)"
   language: "Verilog"
   clock_hz: 10000000
-  tiles: "1x2"
+  tiles: "2x1"
   top_module: "tt_um_chicagojones_trng_ro"
   source_files:
     - "tt_um_trng_ro.v"
