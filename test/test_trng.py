@@ -14,7 +14,10 @@ async def spi_read_byte(dut):
         await Timer(500, unit="ns")
         
         # Sample MISO (uio[6])
-        bit = (dut.uio_out.value >> 6) & 1
+        val = dut.uio_out.value
+        bit = 0
+        if val.is_resolvable:
+            bit = (int(val) >> 6) & 1
         data = (data << 1) | bit
         
         # SCLK Falling Edge
@@ -50,10 +53,12 @@ async def test_trng_features(dut):
     found_valid = False
     for _ in range(10000):
         await RisingEdge(dut.clk)
-        if (dut.uio_out.value.integer & 1) == 1:
+        val = dut.uio_out.value
+        if val.is_resolvable and (int(val) & 1) == 1:
             found_valid = True
-            val = dut.uo_out.value.integer
-            dut._log.info(f"Byte Received: {val:02x}")
+            val_out = dut.uo_out.value
+            if val_out.is_resolvable:
+                dut._log.info(f"Byte Received: {int(val_out):02x}")
             break
             
     if found_valid:
