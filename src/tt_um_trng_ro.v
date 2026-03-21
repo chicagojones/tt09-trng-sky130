@@ -183,7 +183,11 @@ module ro_tunable (
     sky130_fd_sc_hd__nand2_1 nand_inst (
         .A(feedback),
         .B(en),
-        .Y(chain[0])
+        .Y(chain[0]),
+        .VPWR(1'b1),
+        .VGND(1'b0),
+        .VPB(1'b1),
+        .VNB(1'b0)
     );
     `endif
     
@@ -195,7 +199,11 @@ module ro_tunable (
             `else
             sky130_fd_sc_hd__inv_1 inv_inst (
                 .A(chain[i-1]),
-                .Y(chain[i])
+                .Y(chain[i]),
+                .VPWR(1'b1),
+                .VGND(1'b0),
+                .VPB(1'b1),
+                .VNB(1'b0)
             );
             `endif
         end
@@ -219,7 +227,11 @@ module ro_fixed #(parameter LENGTH = 15) (
     sky130_fd_sc_hd__nand2_1 nand_inst (
         .A(chain[LENGTH-1]),
         .B(en),
-        .Y(chain[0])
+        .Y(chain[0]),
+        .VPWR(1'b1),
+        .VGND(1'b0),
+        .VPB(1'b1),
+        .VNB(1'b0)
     );
     `endif
     
@@ -231,7 +243,11 @@ module ro_fixed #(parameter LENGTH = 15) (
             `else
             sky130_fd_sc_hd__inv_1 inv_inst (
                 .A(chain[i-1]),
-                .Y(chain[i])
+                .Y(chain[i]),
+                .VPWR(1'b1),
+                .VGND(1'b0),
+                .VPB(1'b1),
+                .VNB(1'b0)
             );
             `endif
         end
