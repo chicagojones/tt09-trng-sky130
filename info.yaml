@@ -1,12 +1,15 @@
-# Tiny Tapeout Project Information
+# Tiny Tapeout project information
 project:
-  title: "Scientist TRNG (Sky130)"
-  description: "8-RO bank TRNG with NIST health monitors and on-chip frequency characterization via SPI."
-  author: "Josh (Gemini CLI)"
-  language: "Verilog"
-  clock_hz: 10000000
-  tiles: "1x2"
-  top_module: "tt_um_chicagojones_trng_ro"
+  title:        "Scientist TRNG (Sky130)"      # Project title
+  author:       "Josh (Gemini CLI)"      # Your name
+  discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
+  description:  "8-RO bank TRNG with NIST health monitors and on-chip frequency characterization via SPI."      # One line description of what your project does
+  language:     "Verilog" # other examples include Amaranth, VHDL, etc
+  clock_hz:     10000000       # Clock frequency in Hz (or 0 if not applicable)
+
+  # How many tiles your design occupies? A single tile is about 167x108 uM.
+  tiles: "1x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+  top_module: "tt_um_chicagojones_trng_ro" # Standard top-level module name
   source_files:
     - "tt_um_trng_ro.v"
     - "nist_health_monitor.v"
