@@ -26,6 +26,20 @@ module tt_um_chicagojones_trng_ro (
     wire       vn_valid;
     wire       vn_bit;
 
+    wire       uart_tx_out;
+
+    // -- UART Transmitter --
+    uart_tx #(
+        .BAUD_DIV(87) // 10MHz / 115200
+    ) uart_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .data(out_reg),
+        .trigger(byte_valid),
+        .tx(uart_tx_out),
+        .busy()
+    );
+
     // -- Auto-Tuner --
     auto_tuner tuner_inst (
         .clk(clk),
@@ -99,8 +113,9 @@ module tt_um_chicagojones_trng_ro (
     
     // Bidirectional pin configuration
     assign uio_out[0]   = byte_valid;
-    assign uio_out[7:1] = 7'b0;
-    assign uio_oe       = 8'b00000001; // uio[0] is output, rest are inputs
+    assign uio_out[1]   = uart_tx_out;
+    assign uio_out[7:2] = 6'b0;
+    assign uio_oe       = 8'b00000011; // uio[0,1] are outputs, rest are inputs
 
     // Use a dummy wire to "use" otherwise unused inputs to satisfy the linter
     wire _unused = &{ui_in[2:0], uio_in, ena, ro_raw};

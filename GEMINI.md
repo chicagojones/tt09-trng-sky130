@@ -9,3 +9,4 @@
 ## Build Guidelines
 - **Simulation:** Always use `-DCOCOTB_SIM=1` in the `Makefile` or simulation command to include the unit delays required for oscillators.
 - **OpenLane:** Do not enable `SYNTH_BUFFERING` or `SYNTH_SIZING` for the RO modules as it will destroy the oscillator structure.
+- **UART:** Default baud rate is 115200 (BAUD_DIV=87 at 10MHz).

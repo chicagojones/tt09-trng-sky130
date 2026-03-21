@@ -12,6 +12,7 @@ project:
     - "health_monitor.v"
     - "auto_tuner.v"
     - "von_neumann.v"
+    - "uart_tx.v"
 
 # Pins assignments
 # ui_in[7:0] : Dedicated inputs
@@ -46,7 +47,7 @@ pinout:
 
   # Bidirectional
   uio[0]: "Byte Valid Strobe"
-  uio[1]: ""
+  uio[1]: "UART TX Output (115200 baud)"
   uio[2]: ""
   uio[3]: ""
   uio[4]: ""

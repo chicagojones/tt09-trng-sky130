@@ -4,7 +4,8 @@
     "dir::tt_um_trng_ro.v",
     "dir::health_monitor.v",
     "dir::auto_tuner.v",
-    "dir::von_neumann.v"
+    "dir::von_neumann.v",
+    "dir::uart_tx.v"
   ],
   "CLOCK_PORT": "clk",
   "CLOCK_PERIOD": 100,

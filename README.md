@@ -13,6 +13,7 @@ A True Random Number Generator (TRNG) based on tunable ring oscillators, designe
 2. **Entropy Collector:** Sampling logic with a 4-stage synchronizer for metastability mitigation.
 3. **Post-processor:** von Neumann whitener to remove bias.
 4. **Health Monitor:** 1024-bit window running disparity check with auto-tuning feedback.
+5. **UART Output:** Transmits each random byte at 115200 baud on `uio_out[1]`.
 
 ## Top Module
 The top module is `tt_um_chicagojones_trng_ro`.
