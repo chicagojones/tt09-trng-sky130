@@ -9,7 +9,7 @@ module tt_um_chicagojones_trng_ro (
     input  wire [7:0] uio_in,   // IOs: Input path
     output wire [7:0] uio_out,  // IOs: Output path
     output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can use it to enable the design
+    input  wire       ena,      // always 1 when the design is powered
     input  wire       clk,      // clock
     input  wire       rst_n     // reset_n - low to reset
 );
@@ -17,6 +17,12 @@ module tt_um_chicagojones_trng_ro (
     wire en         = ui_in[3];
     wire auto_en    = ui_in[4];
     wire [2:0] man_sel = ui_in[7:5];
+
+    // SPI signals
+    wire spi_cs_n   = uio_in[3];
+    wire spi_sclk   = uio_in[4];
+    wire spi_mosi   = uio_in[5];
+    wire spi_miso;
 
     // Sub-module connections
     wire [2:0] ro_sel;
@@ -43,6 +49,17 @@ module tt_um_chicagojones_trng_ro (
         .busy()
     );
 
+    // -- SPI Follower --
+    spi_follower spi_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .data_in(out_reg),
+        .sclk(spi_sclk),
+        .cs_n(spi_cs_n),
+        .mosi(spi_mosi),
+        .miso(spi_miso)
+    );
+
     // -- Auto-Tuner --
     auto_tuner tuner_inst (
         .clk(clk),
@@ -54,7 +71,7 @@ module tt_um_chicagojones_trng_ro (
         .reset_monitor(reset_monitor)
     );
 
-    // -- Multi-RO Core --
+    // -- Multi-RO Core (8 ROs) --
     trng_core ro_inst (
         .clk(clk),
         .rst_n(rst_n),
@@ -64,8 +81,8 @@ module tt_um_chicagojones_trng_ro (
         .ro_raw(ro_raw)
     );
 
-    // -- Health Monitor --
-    health_monitor monitor_inst (
+    // -- NIST Health Monitor (RCT & APT) --
+    nist_health_monitor monitor_inst (
         .clk(clk),
         .rst_n(rst_n),
         .en(en),
@@ -117,15 +134,22 @@ module tt_um_chicagojones_trng_ro (
     // Bidirectional pin configuration
     assign uio_out[0]   = byte_valid;
     assign uio_out[1]   = uart_tx_out;
-    assign uio_out[7:2] = 6'b0;
-    assign uio_oe       = 8'b00000011; // uio[0,1] are outputs, rest are inputs
+    assign uio_out[6]   = spi_miso;
+    assign uio_out[2]   = 1'b0;
+    assign uio_out[5:3] = 3'b0;
+    assign uio_out[7]   = 1'b0;
+    
+    // 0, 1, 6 are outputs (01000011)
+    assign uio_oe       = 8'b01000011; 
+
+    // Dummy wire for linter
+    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, ro_raw, spi_mosi};
 
 endmodule
 
 /* 
  * Multi-RO Core 
- * Instantiates 3 ROs and XORs them. 
- * RO0 is tunable. RO1 and RO2 have fixed lengths to ensure varied frequencies.
+ * Instantiates 8 ROs and XORs them. 
  */
 module trng_core (
     input  wire       clk,
@@ -136,33 +160,24 @@ module trng_core (
     output wire       ro_raw
 );
 
-    wire out_ro0, out_ro1, out_ro2;
+    wire [7:0] ro_outs;
 
     // RO 0: Tunable (3 to 31 stages)
-    ro_tunable ro0 (
-        .en(en),
-        .sel(sel),
-        .ro_out(out_ro0)
-    );
+    ro_tunable ro0 (.en(en), .sel(sel), .ro_out(ro_outs[0]));
 
-    // RO 1: Fixed 15 stages
-    ro_fixed #(.LENGTH(15)) ro1 (
-        .en(en),
-        .ro_out(out_ro1)
-    );
-
-    // RO 2: Fixed 23 stages
-    ro_fixed #(.LENGTH(23)) ro2 (
-        .en(en),
-        .ro_out(out_ro2)
-    );
+    // RO 1-7: Fixed lengths (Primes to avoid resonance)
+    ro_fixed #(.LENGTH(13)) ro1 (.en(en), .ro_out(ro_outs[1]));
+    ro_fixed #(.LENGTH(17)) ro2 (.en(en), .ro_out(ro_outs[2]));
+    ro_fixed #(.LENGTH(19)) ro3 (.en(en), .ro_out(ro_outs[3]));
+    ro_fixed #(.LENGTH(23)) ro4 (.en(en), .ro_out(ro_outs[4]));
+    ro_fixed #(.LENGTH(29)) ro5 (.en(en), .ro_out(ro_outs[5]));
+    ro_fixed #(.LENGTH(31)) ro6 (.en(en), .ro_out(ro_outs[6]));
+    ro_fixed #(.LENGTH(37)) ro7 (.en(en), .ro_out(ro_outs[7]));
 
     // XOR tree to mix the entropy
-    assign ro_raw = out_ro0 ^ out_ro1 ^ out_ro2;
+    assign ro_raw = ^ro_outs;
 
     // 4-stage Synchronizer for metastability mitigation
-    // Sampling a high-speed asynchronous XOR tree requires multiple stages
-    // to ensure the output resolves to a stable 0 or 1 before the whitener.
     reg [3:0] sync_regs;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
