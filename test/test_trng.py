@@ -4,7 +4,7 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer
 import os
 
 # ---------------------------------------------------------------------------
-# Register Map (b867440 version)
+# Register Map
 # ---------------------------------------------------------------------------
 # 0x00: freq_count[7:0]     (read-only, multiplexed by freq_mux_sel)
 # 0x01: freq_count[15:8]
@@ -13,8 +13,28 @@ import os
 # 0x11: out_reg              (read-only, last random byte)
 # 0x12: {5'b0, ro_sel[2:0]} (read-only)
 # 0x13: ctrl_reg             (read/write)
-#       bit 0: bypass_vn, bit 1: force_manual, bit 2: mask_alarm, bits[4:3]: uo_sel
+#       bits[7:5]: cond_sel (0=VN, 1=Bypass, 2=Tent, 3=CoupledTent,
+#                            4=Logistic, 5=Bernoulli, 6=Lorenz, 7=LFSR)
+#       bits[4:3]: uo_sel, bit 2: mask_alarm, bit 1: force_manual, bit 0: reserved
+# 0x14: tent_state[7:0]     (read-only)
+# 0x15: coupled_state[7:0]  (read-only, x)
+# 0x16: coupled_state[15:8] (read-only, y)
+# 0x17: logistic_state[7:0] (read-only)
+# 0x18: bernoulli_state[7:0](read-only)
+# 0x19: lorenz_state[7:0]   (read-only)
+# 0x1A: lfsr_state[7:0]     (read-only)
+# 0x1D: capability bitmask  (read-only)
 # 0x20: scratch_reg          (read/write)
+
+# cond_sel encoding
+COND_VN       = 0
+COND_BYPASS   = 1
+COND_TENT     = 2
+COND_COUPLED  = 3
+COND_LOGISTIC = 4
+COND_BERNOULLI= 5
+COND_LORENZ   = 6
+COND_LFSR     = 7
 
 # ---------------------------------------------------------------------------
 # SPI helpers (Mode 0: sample on rising edge, shift on falling edge)
@@ -367,7 +387,7 @@ async def test_enable_disable(dut):
 
     # Enable TRNG and bypass whitener so byte_valid fires every 8 clocks
     dut.ui_in.value = (1 << 3)  # en=1
-    await spi_write_byte(dut, 0x13, 0x01)  # bypass_vn=1
+    await spi_write_byte(dut, 0x13, COND_BYPASS << 5)  # cond_sel=1 (bypass)
 
     # Wait and verify byte_valid fires when enabled
     await wait_clocks(dut, 20)
@@ -380,8 +400,8 @@ async def test_enable_disable(dut):
             byte_valid_enabled = True
             break
 
-    dut._log.info(f"byte_valid with en=1, bypass_vn=1: {byte_valid_enabled}")
-    assert byte_valid_enabled, "byte_valid should fire when en=1 and bypass_vn=1"
+    dut._log.info(f"byte_valid with en=1, cond_sel=bypass: {byte_valid_enabled}")
+    assert byte_valid_enabled, "byte_valid should fire when en=1 and cond_sel=bypass"
 
     # Disable: en=0
     dut.ui_in.value = 0
@@ -511,8 +531,8 @@ async def test_ctrl_reg_bypass_vn(dut):
     await reset_dut(dut)
     dut.ui_in.value = (1 << 3)  # en=1
 
-    # Set bypass_vn=1 in ctrl_reg
-    await spi_write_byte(dut, 0x13, 0x01)
+    # Set cond_sel=1 (bypass) in ctrl_reg bits[7:5]
+    await spi_write_byte(dut, 0x13, COND_BYPASS << 5)
 
     # Wait for shift register to fill (8 bits) + some margin
     await wait_clocks(dut, 20)
@@ -536,3 +556,207 @@ async def test_ctrl_reg_bypass_vn(dut):
     rand_byte = await spi_read_byte(dut, 0x11)
     dut._log.info(f"Random byte with bypass_vn=1: 0x{rand_byte:02x}")
     dut._log.info("PASS – bypass_vn enables raw bit path, byte_valid fires")
+
+
+# ===========================================================================
+# Conditioner Tests
+# ===========================================================================
+
+async def select_conditioner_and_wait_byte_valid(dut, cond_sel, max_cycles=200):
+    """Select a conditioner via SPI ctrl_reg and wait for byte_valid."""
+    await spi_write_byte(dut, 0x13, cond_sel << 5)
+    await wait_clocks(dut, 20)
+
+    byte_valid_seen = False
+    for _ in range(max_cycles):
+        await RisingEdge(dut.clk)
+        uio_val = dut.uio_out.value
+        binval = uio_val.binstr
+        if len(binval) == 8 and binval[7] == '1':
+            byte_valid_seen = True
+            break
+    return byte_valid_seen
+
+
+@cocotb.test()
+async def test_cond_sel_tent_map(dut):
+    """Select tent map conditioner, verify byte_valid fires and state is readable."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_TENT)
+    dut._log.info(f"Tent map byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with tent map conditioner"
+
+    # Read tent map state (should be non-zero since it's iterating from seed 0xA5)
+    state = await spi_read_byte(dut, 0x14)
+    dut._log.info(f"Tent map state (0x14): 0x{state:02x}")
+    dut._log.info("PASS – tent map conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_sel_coupled_tent(dut):
+    """Select coupled tent map, verify byte_valid fires and state is readable."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_COUPLED)
+    dut._log.info(f"Coupled tent byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with coupled tent map conditioner"
+
+    state_lo = await spi_read_byte(dut, 0x15)
+    state_hi = await spi_read_byte(dut, 0x16)
+    dut._log.info(f"Coupled tent state: x=0x{state_lo:02x}, y=0x{state_hi:02x}")
+    dut._log.info("PASS – coupled tent map conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_sel_logistic(dut):
+    """Select logistic map conditioner, verify byte_valid fires."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    # Logistic map takes ~8 cycles per iteration, so allow more time
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_LOGISTIC, max_cycles=500)
+    dut._log.info(f"Logistic map byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with logistic map conditioner"
+
+    state = await spi_read_byte(dut, 0x17)
+    dut._log.info(f"Logistic map state (0x17): 0x{state:02x}")
+    dut._log.info("PASS – logistic map conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_sel_bernoulli(dut):
+    """Select Bernoulli shift map, verify byte_valid fires."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_BERNOULLI)
+    dut._log.info(f"Bernoulli byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with Bernoulli shift map conditioner"
+
+    state = await spi_read_byte(dut, 0x18)
+    dut._log.info(f"Bernoulli state (0x18): 0x{state:02x}")
+    dut._log.info("PASS – Bernoulli shift map conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_sel_lorenz(dut):
+    """Select Lorenz attractor, verify byte_valid fires."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    # Lorenz takes ~20 cycles per step, allow extra time
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_LORENZ, max_cycles=500)
+    dut._log.info(f"Lorenz byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with Lorenz attractor conditioner"
+
+    state = await spi_read_byte(dut, 0x19)
+    dut._log.info(f"Lorenz state (0x19): 0x{state:02x}")
+    dut._log.info("PASS – Lorenz attractor conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_sel_lfsr(dut):
+    """Select LFSR conditioner, verify byte_valid fires."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_LFSR)
+    dut._log.info(f"LFSR byte_valid: {byte_valid}")
+    assert byte_valid, "byte_valid should fire with LFSR conditioner"
+
+    state = await spi_read_byte(dut, 0x1A)
+    dut._log.info(f"LFSR state (0x1A): 0x{state:02x}")
+    dut._log.info("PASS – LFSR conditioner produces output")
+
+
+@cocotb.test()
+async def test_cond_capability_register(dut):
+    """Read capability bitmask at 0x1D — all conditioners enabled by default."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    cap = await spi_read_byte(dut, 0x1D)
+    dut._log.info(f"Capability register (0x1D): 0x{cap:02x} = 0b{cap:08b}")
+
+    # Bit layout: {1'b0, LFSR, Lorenz, Bernoulli, Logistic, CoupledTent, TentMap, 1'b1(VN)}
+    # All included by default → 0x7F (0b01111111)
+    assert cap == 0x7F, f"Expected capability 0x7F (all conditioners), got 0x{cap:02x}"
+    dut._log.info("PASS – capability register shows all conditioners enabled")
+
+
+@cocotb.test()
+async def test_cond_switch_no_hang(dut):
+    """Rapidly cycle through all cond_sel values and verify SPI stays responsive."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    for sel in range(8):
+        await spi_write_byte(dut, 0x13, sel << 5)
+        await wait_clocks(dut, 10)
+
+    # Verify SPI still works by writing/reading scratchpad
+    await spi_write_byte(dut, 0x20, 0xBE)
+    val = await spi_read_byte(dut, 0x20)
+    assert val == 0xBE, f"SPI unresponsive after cond_sel cycling: expected 0xBE, got 0x{val:02x}"
+    dut._log.info("PASS – SPI responsive after cycling all conditioner selections")
+
+
+@cocotb.test()
+async def test_cond_sel_invalid_fallback(dut):
+    """cond_sel=7 (LFSR) is the last valid value; verify it works rather than hangs."""
+    if os.environ.get('GATES') == 'yes':
+        dut._log.info("GLS – skipping"); return
+
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+
+    # cond_sel=7 is LFSR (all values 0-7 are now mapped)
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, 7)
+    dut._log.info(f"cond_sel=7 byte_valid: {byte_valid}")
+    assert byte_valid, "cond_sel=7 (LFSR) should produce byte_valid"
+    dut._log.info("PASS – highest cond_sel value works correctly")

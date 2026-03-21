@@ -3,7 +3,14 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off UNDRIVEN */
 
-module tt_um_chicagojones_tt09_trng_sky130 (
+module tt_um_chicagojones_tt09_trng_sky130 #(
+    parameter INCLUDE_TENT_MAP     = 1,
+    parameter INCLUDE_COUPLED_TENT = 1,
+    parameter INCLUDE_LOGISTIC     = 1,
+    parameter INCLUDE_BERNOULLI    = 1,
+    parameter INCLUDE_LORENZ       = 1,
+    parameter INCLUDE_LFSR         = 1
+) (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
@@ -44,10 +51,13 @@ module tt_um_chicagojones_tt09_trng_sky130 (
     wire       reg_write_en;
 
     // Control Register (Address 0x13)
-    // Bit 0: bypass_vn (1 = use raw sampled bits)
+    // Bit 0: (reserved)
     // Bit 1: force_manual (1 = ignore auto_en pin)
     // Bit 2: mask_alarm (1 = ignore NIST alarm for auto-tuning)
     // Bits [4:3]: uo_mux_sel
+    // Bits [7:5]: cond_sel — conditioning function select
+    //   0=VonNeumann, 1=Bypass, 2=Tent, 3=CoupledTent,
+    //   4=Logistic, 5=Bernoulli, 6=Lorenz, 7=LFSR
     reg [7:0] ctrl_reg;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -57,10 +67,10 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         end
     end
 
-    wire bypass_vn    = ctrl_reg[0];
-    wire force_manual = ctrl_reg[1];
-    wire mask_alarm   = ctrl_reg[2];
-    wire [1:0] uo_sel  = ctrl_reg[4:3];
+    wire [2:0] cond_sel  = ctrl_reg[7:5];
+    wire force_manual    = ctrl_reg[1];
+    wire mask_alarm      = ctrl_reg[2];
+    wire [1:0] uo_sel    = ctrl_reg[4:3];
 
     // Frequency Mux Control
     reg [2:0] freq_mux_sel;
@@ -115,6 +125,21 @@ module tt_um_chicagojones_tt09_trng_sky130 (
             7'h11: reg_data_in = out_reg;
             7'h12: reg_data_in = {5'b0, ro_sel};
             7'h13: reg_data_in = ctrl_reg;
+            7'h14: reg_data_in = tent_state;
+            7'h15: reg_data_in = coupled_state[7:0];
+            7'h16: reg_data_in = coupled_state[15:8];
+            7'h17: reg_data_in = logistic_state;
+            7'h18: reg_data_in = bern_state;
+            7'h19: reg_data_in = lorenz_state;
+            7'h1A: reg_data_in = lfsr_state;
+            7'h1D: reg_data_in = {1'b0,
+                                  INCLUDE_LFSR[0],
+                                  INCLUDE_LORENZ[0],
+                                  INCLUDE_BERNOULLI[0],
+                                  INCLUDE_LOGISTIC[0],
+                                  INCLUDE_COUPLED_TENT[0],
+                                  INCLUDE_TENT_MAP[0],
+                                  1'b1};  // bit 0 = VN always present
             7'h20: reg_data_in = scratch_reg;
             default: reg_data_in = 8'h00;
         endcase
@@ -172,7 +197,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .alarm(alarm)
     );
 
-    // -- Von Neumann Whitener --
+    // -- Von Neumann Whitener (always present) --
     von_neumann vn_inst (
         .clk(clk),
         .rst_n(rst_n),
@@ -182,15 +207,131 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .out_bit(vn_bit)
     );
 
+    // -- Conditioner Module Wires --
+    wire tent_bit, tent_valid;
+    wire [7:0] tent_state;
+
+    wire coupled_bit, coupled_valid;
+    wire [15:0] coupled_state;
+
+    wire logistic_bit, logistic_valid;
+    wire [7:0] logistic_state;
+
+    wire bern_bit, bern_valid;
+    wire [7:0] bern_state;
+
+    wire lorenz_bit, lorenz_valid;
+    wire [7:0] lorenz_state;
+
+    wire lfsr_bit, lfsr_valid;
+    wire [7:0] lfsr_state;
+
+    // -- Conditioner Instantiations (parameterized) --
+    generate
+        if (INCLUDE_TENT_MAP) begin : gen_tent
+            cond_tent_map tent_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(tent_bit), .out_valid(tent_valid),
+                .state_out(tent_state)
+            );
+        end else begin : gen_no_tent
+            assign tent_bit = 1'b0;
+            assign tent_valid = 1'b0;
+            assign tent_state = 8'h00;
+        end
+
+        if (INCLUDE_COUPLED_TENT) begin : gen_coupled
+            cond_coupled_tent coupled_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(coupled_bit), .out_valid(coupled_valid),
+                .state_out(coupled_state)
+            );
+        end else begin : gen_no_coupled
+            assign coupled_bit = 1'b0;
+            assign coupled_valid = 1'b0;
+            assign coupled_state = 16'h0000;
+        end
+
+        if (INCLUDE_LOGISTIC) begin : gen_logistic
+            cond_logistic logistic_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(logistic_bit), .out_valid(logistic_valid),
+                .state_out(logistic_state)
+            );
+        end else begin : gen_no_logistic
+            assign logistic_bit = 1'b0;
+            assign logistic_valid = 1'b0;
+            assign logistic_state = 8'h00;
+        end
+
+        if (INCLUDE_BERNOULLI) begin : gen_bernoulli
+            cond_bernoulli bern_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(bern_bit), .out_valid(bern_valid),
+                .state_out(bern_state)
+            );
+        end else begin : gen_no_bernoulli
+            assign bern_bit = 1'b0;
+            assign bern_valid = 1'b0;
+            assign bern_state = 8'h00;
+        end
+
+        if (INCLUDE_LORENZ) begin : gen_lorenz
+            cond_lorenz lorenz_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(lorenz_bit), .out_valid(lorenz_valid),
+                .state_out(lorenz_state)
+            );
+        end else begin : gen_no_lorenz
+            assign lorenz_bit = 1'b0;
+            assign lorenz_valid = 1'b0;
+            assign lorenz_state = 8'h00;
+        end
+
+        if (INCLUDE_LFSR) begin : gen_lfsr
+            cond_lfsr lfsr_inst (
+                .clk(clk), .rst_n(rst_n), .en(en),
+                .sampled_bit(sampled_bit),
+                .out_bit(lfsr_bit), .out_valid(lfsr_valid),
+                .state_out(lfsr_state)
+            );
+        end else begin : gen_no_lfsr
+            assign lfsr_bit = 1'b0;
+            assign lfsr_valid = 1'b0;
+            assign lfsr_state = 8'h00;
+        end
+    endgenerate
+
+    // -- Conditioning Output Mux (selected by cond_sel) --
+    reg cond_bit;
+    reg cond_valid;
+
+    always @(*) begin
+        case (cond_sel)
+            3'd0: begin cond_bit = vn_bit;       cond_valid = vn_valid;       end // Von Neumann
+            3'd1: begin cond_bit = sampled_bit;   cond_valid = 1'b1;          end // Bypass
+            3'd2: begin cond_bit = tent_bit;      cond_valid = tent_valid;    end // Tent map
+            3'd3: begin cond_bit = coupled_bit;   cond_valid = coupled_valid; end // Coupled tent
+            3'd4: begin cond_bit = logistic_bit;  cond_valid = logistic_valid;end // Logistic
+            3'd5: begin cond_bit = bern_bit;      cond_valid = bern_valid;    end // Bernoulli
+            3'd6: begin cond_bit = lorenz_bit;    cond_valid = lorenz_valid;  end // Lorenz
+            3'd7: begin cond_bit = lfsr_bit;      cond_valid = lfsr_valid;    end // LFSR
+        endcase
+    end
+
+    wire active_bit   = cond_bit;
+    wire active_valid = cond_valid;
+
     // -- 8-Bit Shift Register (Serial to Parallel) --
     reg [7:0] shift_reg;
     reg [7:0] out_reg;
     reg [2:0] bit_count;
     reg       byte_valid;
-
-    // Use either whitened or raw sampled bits based on ctrl_reg
-    wire active_bit   = bypass_vn ? sampled_bit : vn_bit;
-    wire active_valid = bypass_vn ? 1'b1        : vn_valid;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
