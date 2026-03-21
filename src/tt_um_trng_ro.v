@@ -77,7 +77,7 @@ module tt_um_chicagojones_tt09_trng_sky130 (
         .reg_write_en(reg_write_en)
     );
 
-    // Register Read Multiplexer
+    // Register Read Multiplexer (Extended for 24-bit counts)
     always @(*) begin
         case (reg_addr)
             // Frequency Byte (0x00 - 0x02)
@@ -211,16 +211,16 @@ module trng_core (
 );
 
     // RO 0: Tunable (3 to 31 stages)
-    ro_tunable ro0 (.en(en), .sel(sel), .ro_out(ro_outs[0]));
+    ro_tunable ro0 (.clk(clk), .rst_n(rst_n), .en(en), .sel(sel), .ro_out(ro_outs[0]));
 
     // RO 1-7: Fixed lengths (Primes)
-    ro_fixed #(.LENGTH(13), .DRIVE(1)) ro1 (.en(en), .ro_out(ro_outs[1]));
-    ro_fixed #(.LENGTH(17), .DRIVE(2)) ro2 (.en(en), .ro_out(ro_outs[2]));
-    ro_fixed #(.LENGTH(19), .DRIVE(4)) ro3 (.en(en), .ro_out(ro_outs[3]));
-    ro_fixed #(.LENGTH(23), .DRIVE(1)) ro4 (.en(en), .ro_out(ro_outs[4]));
-    ro_fixed #(.LENGTH(29), .DRIVE(2)) ro5 (.en(en), .ro_out(ro_outs[5]));
-    ro_fixed #(.LENGTH(31), .DRIVE(4)) ro6 (.en(en), .ro_out(ro_outs[6]));
-    ro_fixed #(.LENGTH(37), .DRIVE(1)) ro7 (.en(en), .ro_out(ro_outs[7]));
+    ro_fixed #(.LENGTH(13), .DRIVE(1)) ro1 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[1]));
+    ro_fixed #(.LENGTH(17), .DRIVE(2)) ro2 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[2]));
+    ro_fixed #(.LENGTH(19), .DRIVE(4)) ro3 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[3]));
+    ro_fixed #(.LENGTH(23), .DRIVE(1)) ro4 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[4]));
+    ro_fixed #(.LENGTH(29), .DRIVE(2)) ro5 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[5]));
+    ro_fixed #(.LENGTH(31), .DRIVE(4)) ro6 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[6]));
+    ro_fixed #(.LENGTH(37), .DRIVE(1)) ro7 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[7]));
 
     // XOR tree to mix the entropy
     wire ro_combined = ^ro_outs;
@@ -242,10 +242,22 @@ endmodule
  * Tunable Ring Oscillator
  */
 module ro_tunable (
+    input  wire       clk,      // Used for simulation only
+    input  wire       rst_n,    // Used for simulation only
     input  wire       en,
     input  wire [2:0] sel,
     output wire       ro_out
 );
+    
+    `ifdef SIM
+    // Synchronous toggle for fast simulation
+    reg sim_ro;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) sim_ro <= 1'b0;
+        else if (en) sim_ro <= ~sim_ro;
+    end
+    assign ro_out = sim_ro;
+    `else
     (* keep *) wire [31:0] chain;
     wire        feedback;
 
@@ -258,64 +270,57 @@ module ro_tunable (
                       (sel == 3'd6) ? chain[26] :
                                       chain[30];
 
-    `ifdef SIM
-    assign chain[0] = ~(feedback & en);
-    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (.A(feedback), .B(en), .Y(chain[0]));
-    /* verilator lint_on PINMISSING */
-    `endif
     
     genvar i;
     generate
         for (i = 1; i < 32; i = i + 1) begin : ro_inverters
-            `ifdef SIM
-            assign chain[i] = ~chain[i-1];
-            `else
-            /* verilator lint_off PINMISSING */
             sky130_fd_sc_hd__inv_1 inv_inst (.A(chain[i-1]), .Y(chain[i]));
-            /* verilator lint_on PINMISSING */
-            `endif
         end
     endgenerate
+    /* verilator lint_on PINMISSING */
 
     assign ro_out = chain[0];
+    `endif
 endmodule
 
 /* 
  * Fixed Length Ring Oscillator
  */
 module ro_fixed #(parameter LENGTH = 15, parameter DRIVE = 1) (
-    input  wire en,
-    output wire ro_out
+    input  wire       clk,      // Used for simulation only
+    input  wire       rst_n,    // Used for simulation only
+    input  wire       en,
+    output wire       ro_out
 );
+    `ifdef SIM
+    // Synchronous toggle for fast simulation
+    reg sim_ro;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) sim_ro <= 1'b0;
+        else if (en) sim_ro <= ~sim_ro;
+    end
+    assign ro_out = sim_ro;
+    `else
     (* keep *) wire [LENGTH:0] chain;
 
-    `ifdef SIM
-    assign chain[0] = ~(chain[LENGTH-1] & en);
-    `else
     /* verilator lint_off PINMISSING */
     sky130_fd_sc_hd__nand2_1 nand_inst (.A(chain[LENGTH-1]), .B(en), .Y(chain[0]));
-    /* verilator lint_on PINMISSING */
-    `endif
     
     genvar i;
     generate
         for (i = 1; i < LENGTH; i = i + 1) begin : ro_inverters
-            `ifdef SIM
-            assign chain[i] = ~chain[i-1];
-            `else
-            /* verilator lint_off PINMISSING */
             if (DRIVE == 4)
                 sky130_fd_sc_hd__inv_4 inv_inst (.A(chain[i-1]), .Y(chain[i]));
             else if (DRIVE == 2)
                 sky130_fd_sc_hd__inv_2 inv_inst (.A(chain[i-1]), .Y(chain[i]));
             else
                 sky130_fd_sc_hd__inv_1 inv_inst (.A(chain[i-1]), .Y(chain[i]));
-            /* verilator lint_on PINMISSING */
-            `endif
         end
     endgenerate
+    /* verilator lint_on PINMISSING */
 
     assign ro_out = chain[0];
+    `endif
 endmodule
