@@ -1,5 +1,8 @@
 `default_nettype none
 
+/* verilator lint_off UNUSEDSIGNAL */
+/* verilator lint_off UNDRIVEN */
+
 module tt_um_chicagojones_trng_ro (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
@@ -116,9 +119,6 @@ module tt_um_chicagojones_trng_ro (
     assign uio_out[1]   = uart_tx_out;
     assign uio_out[7:2] = 6'b0;
     assign uio_oe       = 8'b00000011; // uio[0,1] are outputs, rest are inputs
-
-    // Use a dummy wire to "use" otherwise unused inputs to satisfy the linter
-    wire _unused = &{ui_in[2:0], uio_in, ena, ro_raw};
 
 endmodule
 
