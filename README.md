@@ -1,18 +1,21 @@
-# TT09 Tunable Ring Oscillator TRNG (IHP SG13G2)
+# TT09 Tunable Ring Oscillator TRNG (Sky130)
 
-A True Random Number Generator (TRNG) based on tunable ring oscillators, designed for Tiny Tapeout 09 (IHP SG13G2 process).
+A True Random Number Generator (TRNG) based on tunable ring oscillators, designed for Tiny Tapeout 09 (Sky130 sky26a process).
 
 ## Design Goals
 - **Tunability:** Adjust the number of inverters in the ring to optimize entropy extraction.
 - **Process Robustness:** Ensure the RO oscillates across PVT (Process, Voltage, Temperature) variations.
-- **Compactness:** Fit within a single Tiny Tapeout tile (160um x 100um).
+- **Compactness:** Fit within 2x1 Tiny Tapeout tiles (320um x 225um).
 - **Interface:** Standard Tiny Tapeout 8x8x8 interface.
 
-## Architecture (Proposed)
-1. **Tunable RO Core:** Multiple rings with mux-selectable stages.
-2. **Entropy Collector:** XORing the outputs of multiple ROs.
-3. **Sampling Logic:** Capturing the jittery RO state with a reference clock.
-4. **Post-processor:** von Neumann or simple whitening logic.
+## Architecture
+1. **Multi-RO Core:** 3 parallel Ring Oscillators (1 tunable, 2 fixed) XORed together.
+2. **Entropy Collector:** Sampling logic with a 4-stage synchronizer for metastability mitigation.
+3. **Post-processor:** von Neumann whitener to remove bias.
+4. **Health Monitor:** 1024-bit window running disparity check with auto-tuning feedback.
+
+## Top Module
+The top module is `tt_um_chicagojones_trng_ro`.
 
 ## Project Structure
 - `src/`: Verilog source files.
