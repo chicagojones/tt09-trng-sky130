@@ -43,8 +43,8 @@ module tt_um_chicagojones_trng_ro (
     wire [7:0] reg_data_out;
     wire       reg_write_en;
 
-    // Frequency Counter Outputs (24-bit each)
-    wire [23:0] freq_counts [7:0];
+    // Frequency Counter Outputs
+    wire [15:0] freq_counts [7:0];
 
     // SPI Follower
     spi_follower spi_inst (
@@ -60,10 +60,9 @@ module tt_um_chicagojones_trng_ro (
         .reg_write_en(reg_write_en)
     );
 
-    // Register Read Multiplexer (Extended for 24-bit counts)
+    // Register Read Multiplexer
     always @(*) begin
         case (reg_addr)
-            // Low Bytes (0x00 - 0x07)
             7'h00: reg_data_in = freq_counts[0][7:0];
             7'h01: reg_data_in = freq_counts[1][7:0];
             7'h02: reg_data_in = freq_counts[2][7:0];
@@ -72,8 +71,6 @@ module tt_um_chicagojones_trng_ro (
             7'h05: reg_data_in = freq_counts[5][7:0];
             7'h06: reg_data_in = freq_counts[6][7:0];
             7'h07: reg_data_in = freq_counts[7][7:0];
-            
-            // Middle Bytes (0x08 - 0x0F)
             7'h08: reg_data_in = freq_counts[0][15:8];
             7'h09: reg_data_in = freq_counts[1][15:8];
             7'h0A: reg_data_in = freq_counts[2][15:8];
@@ -82,17 +79,6 @@ module tt_um_chicagojones_trng_ro (
             7'h0D: reg_data_in = freq_counts[5][15:8];
             7'h0E: reg_data_in = freq_counts[6][15:8];
             7'h0F: reg_data_in = freq_counts[7][15:8];
-
-            // High Bytes (0x18 - 0x1F)
-            7'h18: reg_data_in = freq_counts[0][23:16];
-            7'h19: reg_data_in = freq_counts[1][23:16];
-            7'h1A: reg_data_in = freq_counts[2][23:16];
-            7'h1B: reg_data_in = freq_counts[3][23:16];
-            7'h1C: reg_data_in = freq_counts[4][23:16];
-            7'h1D: reg_data_in = freq_counts[5][23:16];
-            7'h1E: reg_data_in = freq_counts[6][23:16];
-            7'h1F: reg_data_in = freq_counts[7][23:16];
-
             7'h10: reg_data_in = {3'b0, alarm, 1'b0, ro_sel}; // Status
             7'h11: reg_data_in = out_reg; // Last random byte
             default: reg_data_in = 8'h00;
