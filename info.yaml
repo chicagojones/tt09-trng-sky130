@@ -2,8 +2,8 @@
 project:
   wokwi_id:     0      # Set to 0 for HDL-only projects
   title:        "Sky26a Advanced TRNG"      # Project title
-  author:       "Josh (Gemini CLI)"      # Your name
-  discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
+  author:       "Josh Gillespie"      # Your name
+  discord:      ".joshjoshjoshjosh"      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
   description:  "8-RO bank TRNG with NIST health monitors and 6 chaotic whiteners."      # One line description of what your project does
   language:     "Verilog" # other examples include Amaranth, VHDL, etc
   clock_hz:     10000000       # Clock frequency in Hz (or 0 if not applicable)

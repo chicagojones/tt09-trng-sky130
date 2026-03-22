@@ -85,7 +85,8 @@ The conditioner processes the sampled entropy bits before output, selected via `
 | 0 | `sync_before_xor` | 1 = sync each RO independently before XOR |
 | 1 | `nist_inject_en` | 1 = enable NIST test injection (overrides entropy source for monitor) |
 | 2 | `nist_inject_bit` | Bit value to inject when injection is enabled |
-| 7:3 | reserved | |
+| 3 | `uart_stream_en` | 1 = stream random bytes on UART TX (default off) |
+| 7:4 | reserved | |
 
 ### UART Command Protocol
 

@@ -97,7 +97,10 @@ module tt_um_chicagojones_sky26a_trng #(
 
     // Entropy Control Register (Address 0x21)
     // Bit 0: sync_before_xor (1 = sync each RO independently, then XOR)
-    // Bits [7:1]: reserved
+    // Bit 1: nist_inject_en (1 = override entropy source for NIST monitor)
+    // Bit 2: nist_inject_bit (bit value to inject when injection enabled)
+    // Bit 3: uart_stream_en (1 = stream random bytes on UART TX, default off)
+    // Bits [7:4]: reserved
     reg [7:0] entropy_ctrl_reg;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -109,6 +112,7 @@ module tt_um_chicagojones_sky26a_trng #(
     wire sync_before_xor = entropy_ctrl_reg[0];
     wire nist_inject_en  = entropy_ctrl_reg[1];
     wire nist_inject_bit = entropy_ctrl_reg[2];
+    wire uart_stream_en  = entropy_ctrl_reg[3];
 
     // Frequency Mux Control
     reg [2:0] freq_mux_sel;
@@ -224,9 +228,9 @@ module tt_um_chicagojones_sky26a_trng #(
         end
     end
 
-    // Suppress random byte streaming while UART command is in progress
-    // (from first byte received through response sent)
-    wire       uart_suppress  = uart_cmd_got_first | uart_resp_pending;
+    // Suppress random byte streaming unless uart_stream_en is set,
+    // and always suppress during UART command processing
+    wire       uart_suppress  = uart_cmd_got_first | uart_resp_pending | ~uart_stream_en;
     wire       uart_resp_fire = uart_resp_pending & ~uart_tx_busy;
     wire [7:0] tx_mux_data    = uart_resp_fire ? uart_resp_buf : out_reg;
     wire       tx_mux_trig    = uart_resp_fire | (~uart_suppress & byte_valid & ~uart_tx_busy);

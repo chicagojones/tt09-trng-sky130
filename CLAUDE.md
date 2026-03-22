@@ -67,7 +67,10 @@ Tests use cocotb 2.0.1 with pytest. The test module is `test/test_trng.py`.
 | Bit(s) | Name | Description |
 |--------|------|-------------|
 | 0 | `sync_before_xor` | 1 = sync each RO independently (2-stage) before XOR combination |
-| 7:1 | reserved | |
+| 1 | `nist_inject_en` | 1 = override entropy source for NIST monitor with inject_bit |
+| 2 | `nist_inject_bit` | Bit value to inject when injection enabled |
+| 3 | `uart_stream_en` | 1 = stream random bytes on UART TX (default off) |
+| 7:4 | reserved | |
 
 ## Critical Design Constraints
 
