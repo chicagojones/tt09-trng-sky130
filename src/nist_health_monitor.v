@@ -13,7 +13,11 @@ module nist_health_monitor (
     input  wire en,             // Only process when enabled
     input  wire bit_in,         // Raw sampled bit
     input  wire reset_alarm,    // Clear alarm
-    output reg  alarm           // High if RCT or APT fails
+    output reg  alarm,          // High if RCT or APT fails
+    output wire [5:0] dbg_rct_count,
+    output wire       dbg_rct_fail,
+    output wire [9:0] dbg_apt_match_count,
+    output wire       dbg_apt_fail
 );
 
     // --- Repetition Count Test (RCT) ---
@@ -93,5 +97,11 @@ module nist_health_monitor (
         else
             alarm <= rct_fail | apt_fail;
     end
+
+    // Debug outputs
+    assign dbg_rct_count     = rct_count;
+    assign dbg_rct_fail      = rct_fail;
+    assign dbg_apt_match_count = apt_match_count;
+    assign dbg_apt_fail      = apt_fail;
 
 endmodule

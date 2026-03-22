@@ -3,7 +3,7 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off UNDRIVEN */
 
-module tt_um_chicagojones_tt09_trng_sky130 #(
+module tt_um_chicagojones_sky26a_trng #(
     parameter INCLUDE_TENT_MAP     = 1,
     parameter INCLUDE_COUPLED_TENT = 1,
     parameter INCLUDE_LOGISTIC     = 1,
@@ -31,11 +31,14 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     wire spi_mosi   = uio_in[5];
     wire spi_miso;
 
+    // UART RX signal
+    wire uart_rx_pin = uio_in[2];
+
     // Sub-module connections
     wire [2:0] ro_sel;
     wire [7:0] ro_raw_signals;
     wire       sampled_bit;
-    
+
     wire       alarm;
     wire       reset_monitor;
 
@@ -43,15 +46,34 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     wire       vn_bit;
 
     wire       uart_tx_out;
+    wire       uart_tx_busy;
 
-    // -- Register File & SPI --
-    wire [6:0] reg_addr;
+    // -- Register File & Bus Arbitration --
+    // SPI-side register bus
+    wire [6:0] spi_reg_addr;
     reg  [7:0] reg_data_in;
-    wire [7:0] reg_data_out;
-    wire       reg_write_en;
+    wire [7:0] spi_reg_data_out;
+    wire       spi_reg_write_en;
+
+    // UART command parser signals
+    wire [7:0] uart_rx_data;
+    wire       uart_rx_valid;
+    reg  [6:0] uart_reg_addr;
+    reg  [7:0] uart_reg_data_out;
+    reg        uart_reg_write_en;
+    reg        uart_read_done;
+    reg        uart_cmd_active;   // 1 when UART owns the register bus
+
+    // Arbitrated register bus (UART takes priority during its command)
+    // uart_cmd_active goes low on the same edge as write_en/read_done,
+    // so include those in the mux select to keep the address stable.
+    wire       uart_bus_own  = uart_cmd_active | uart_reg_write_en | uart_read_done;
+    wire [6:0] reg_addr      = uart_bus_own ? uart_reg_addr     : spi_reg_addr;
+    wire [7:0] reg_data_out  = uart_bus_own ? uart_reg_data_out : spi_reg_data_out;
+    wire       reg_write_en  = uart_reg_write_en | spi_reg_write_en;
 
     // Control Register (Address 0x13)
-    // Bit 0: (reserved)
+    // Bit 0: ro_bypass (1 = single-RO mode, selected by freq_mux_sel)
     // Bit 1: force_manual (1 = ignore auto_en pin)
     // Bit 2: mask_alarm (1 = ignore NIST alarm for auto-tuning)
     // Bits [4:3]: uo_mux_sel
@@ -68,9 +90,25 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     end
 
     wire [2:0] cond_sel  = ctrl_reg[7:5];
+    wire ro_bypass       = ctrl_reg[0];
     wire force_manual    = ctrl_reg[1];
     wire mask_alarm      = ctrl_reg[2];
     wire [1:0] uo_sel    = ctrl_reg[4:3];
+
+    // Entropy Control Register (Address 0x21)
+    // Bit 0: sync_before_xor (1 = sync each RO independently, then XOR)
+    // Bits [7:1]: reserved
+    reg [7:0] entropy_ctrl_reg;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            entropy_ctrl_reg <= 8'h00;
+        else if (reg_write_en && reg_addr == 7'h21)
+            entropy_ctrl_reg <= reg_data_out;
+    end
+
+    wire sync_before_xor = entropy_ctrl_reg[0];
+    wire nist_inject_en  = entropy_ctrl_reg[1];
+    wire nist_inject_bit = entropy_ctrl_reg[2];
 
     // Frequency Mux Control
     reg [2:0] freq_mux_sel;
@@ -109,11 +147,89 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         .cs_n(spi_cs_n),
         .mosi(spi_mosi),
         .miso(spi_miso),
-        .reg_addr(reg_addr),
+        .reg_addr(spi_reg_addr),
         .reg_data_in(reg_data_in),
-        .reg_data_out(reg_data_out),
-        .reg_write_en(reg_write_en)
+        .reg_data_out(spi_reg_data_out),
+        .reg_write_en(spi_reg_write_en)
     );
+
+    // -- UART Receiver --
+    uart_rx #(
+        .BAUD_DIV(87)
+    ) uart_rx_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .rx(uart_rx_pin),
+        .data(uart_rx_data),
+        .valid(uart_rx_valid)
+    );
+
+    // -- UART Command Parser --
+    // Protocol: 2 bytes per command
+    //   Byte 1: {W/R_n, addr[6:0]}  (bit 7: 1=write, 0=read)
+    //   Byte 2: write_data (for writes) or dummy (for reads)
+    // On read: device responds with 1 byte on UART TX
+    reg       uart_cmd_is_write;
+    reg       uart_cmd_got_first;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            uart_cmd_got_first <= 1'b0;
+            uart_cmd_is_write  <= 1'b0;
+            uart_reg_addr      <= 7'd0;
+            uart_reg_data_out  <= 8'd0;
+            uart_reg_write_en  <= 1'b0;
+            uart_read_done     <= 1'b0;
+            uart_cmd_active    <= 1'b0;
+        end else begin
+            uart_reg_write_en <= 1'b0;
+            uart_read_done    <= 1'b0;
+
+            if (uart_rx_valid) begin
+                if (!uart_cmd_got_first) begin
+                    // First byte: command
+                    uart_reg_addr      <= uart_rx_data[6:0];
+                    uart_cmd_is_write  <= uart_rx_data[7];
+                    uart_cmd_got_first <= 1'b1;
+                    uart_cmd_active    <= 1'b1;
+                end else begin
+                    // Second byte: data
+                    uart_cmd_got_first <= 1'b0;
+                    uart_cmd_active    <= 1'b0;
+                    if (uart_cmd_is_write) begin
+                        uart_reg_data_out <= uart_rx_data;
+                        uart_reg_write_en <= 1'b1;
+                    end else begin
+                        uart_read_done <= 1'b1;
+                    end
+                end
+            end
+        end
+    end
+
+    // -- UART TX Response Buffer --
+    // When a UART read completes, buffer the register value and send via TX
+    reg       uart_resp_pending;
+    reg [7:0] uart_resp_buf;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            uart_resp_pending <= 1'b0;
+            uart_resp_buf     <= 8'd0;
+        end else if (uart_read_done) begin
+            uart_resp_pending <= 1'b1;
+            uart_resp_buf     <= reg_data_in;
+        end else if (uart_resp_pending && !uart_tx_busy) begin
+            uart_resp_pending <= 1'b0;
+        end
+    end
+
+    // Suppress random byte streaming while UART command is in progress
+    // (from first byte received through response sent)
+    wire       uart_suppress  = uart_cmd_got_first | uart_resp_pending;
+    wire       uart_resp_fire = uart_resp_pending & ~uart_tx_busy;
+    wire [7:0] tx_mux_data    = uart_resp_fire ? uart_resp_buf : out_reg;
+    wire       tx_mux_trig    = uart_resp_fire | (~uart_suppress & byte_valid & ~uart_tx_busy);
 
     // Register Read Multiplexer
     always @(*) begin
@@ -140,7 +256,11 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
                                   INCLUDE_COUPLED_TENT[0],
                                   INCLUDE_TENT_MAP[0],
                                   1'b1};  // bit 0 = VN always present
+            7'h1B: reg_data_in = {dbg_rct_fail, dbg_apt_fail, dbg_rct_count};
+            7'h1C: reg_data_in = dbg_apt_match_count[7:0];
+            7'h1E: reg_data_in = {6'b0, dbg_apt_match_count[9:8]};
             7'h20: reg_data_in = scratch_reg;
+            7'h21: reg_data_in = entropy_ctrl_reg;
             default: reg_data_in = 8'h00;
         endcase
     end
@@ -151,10 +271,10 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     ) uart_inst (
         .clk(clk),
         .rst_n(rst_n),
-        .data(out_reg),
-        .trigger(byte_valid),
+        .data(tx_mux_data),
+        .trigger(tx_mux_trig),
         .tx(uart_tx_out),
-        .busy()
+        .busy(uart_tx_busy)
     );
 
     // -- Auto-Tuner --
@@ -174,6 +294,9 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         .rst_n(rst_n),
         .en(en),
         .sel(ro_sel),
+        .ro_bypass(ro_bypass),
+        .sync_before_xor(sync_before_xor),
+        .bypass_sel(freq_mux_sel),
         .sampled_bit(sampled_bit),
         .ro_outs(ro_raw_signals)
     );
@@ -188,13 +311,23 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     );
 
     // -- NIST Health Monitor (RCT & APT) --
+    wire        nist_bit_in = nist_inject_en ? nist_inject_bit : sampled_bit;
+    wire [5:0]  dbg_rct_count;
+    wire        dbg_rct_fail;
+    wire [9:0]  dbg_apt_match_count;
+    wire        dbg_apt_fail;
+
     nist_health_monitor monitor_inst (
         .clk(clk),
         .rst_n(rst_n),
         .en(en),
-        .bit_in(sampled_bit),
+        .bit_in(nist_bit_in),
         .reset_alarm(reset_monitor),
-        .alarm(alarm)
+        .alarm(alarm),
+        .dbg_rct_count(dbg_rct_count),
+        .dbg_rct_fail(dbg_rct_fail),
+        .dbg_apt_match_count(dbg_apt_match_count),
+        .dbg_apt_fail(dbg_apt_fail)
     );
 
     // -- Von Neumann Whitener (always present) --
@@ -379,7 +512,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     
     assign uio_oe       = 8'b01000011; 
 
-    wire _unused = &{ui_in[2:0], uio_in[2], uio_in[7], ena, spi_mosi, reg_data_out[7:3]};
+    wire _unused = &{ui_in[2:0], uio_in[7], ena, spi_mosi, spi_reg_data_out[7:3]};
 
 endmodule
 
@@ -391,6 +524,9 @@ module trng_core (
     input  wire       rst_n,
     input  wire       en,
     input  wire [2:0] sel,
+    input  wire       ro_bypass,       // 1 = single-RO mode (bypass XOR)
+    input  wire       sync_before_xor, // 1 = sync each RO independently, then XOR
+    input  wire [2:0] bypass_sel,      // which RO to use in bypass mode
     output wire       sampled_bit,
     output wire [7:0] ro_outs
 );
@@ -407,19 +543,42 @@ module trng_core (
     ro_fixed #(.LENGTH(31), .DRIVE(4)) ro6 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[6]));
     ro_fixed #(.LENGTH(37), .DRIVE(1)) ro7 (.clk(clk), .rst_n(rst_n), .en(en), .ro_out(ro_outs[7]));
 
-    // XOR tree to mix the entropy
+    // --- Path A: XOR all ROs, then 4-stage sync (default) ---
     wire ro_combined = ^ro_outs;
-
-    // 4-stage Synchronizer
-    reg [3:0] sync_regs;
+    reg [3:0] sync_post_xor;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            sync_regs <= 4'b0;
+            sync_post_xor <= 4'b0;
         else
-            sync_regs <= {sync_regs[2:0], ro_combined};
+            sync_post_xor <= {sync_post_xor[2:0], ro_combined};
     end
 
-    assign sampled_bit = sync_regs[3];
+    // --- Path B: 2-stage sync per RO, then XOR ---
+    reg [7:0] ro_sync_s1, ro_sync_s2;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ro_sync_s1 <= 8'b0;
+            ro_sync_s2 <= 8'b0;
+        end else begin
+            ro_sync_s1 <= ro_outs;
+            ro_sync_s2 <= ro_sync_s1;
+        end
+    end
+
+    // --- Path C: Single RO bypass with 4-stage sync ---
+    wire ro_selected = ro_outs[bypass_sel];
+    reg [3:0] sync_bypass;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            sync_bypass <= 4'b0;
+        else
+            sync_bypass <= {sync_bypass[2:0], ro_selected};
+    end
+
+    // Output selection: bypass takes priority, then sync_before_xor, else default
+    assign sampled_bit = ro_bypass      ? sync_bypass[3] :
+                         sync_before_xor ? ^ro_sync_s2   :
+                         sync_post_xor[3];
 
 endmodule
 

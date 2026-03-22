@@ -22,10 +22,10 @@ ifeq ($(UNIT),1)
 # FULL CHIP MODE (Standard)
 # ---------------------------------------------------------------------------
 else
-    PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann.v uart_tx.v spi_follower.v ro_freq_counter.v \
+    PROJECT_SOURCES = tt_um_trng_ro.v nist_health_monitor.v auto_tuner.v von_neumann.v uart_tx.v uart_rx.v spi_follower.v ro_freq_counter.v \
                       cond_tent_map.v cond_coupled_tent.v cond_logistic.v cond_bernoulli.v cond_lorenz.v cond_lfsr.v
 
-    TOPLEVEL = tt_um_chicagojones_tt09_trng_sky130
+    TOPLEVEL = tt_um_chicagojones_sky26a_trng
     MODULE   = test_trng
 
     ifneq ($(GATES),yes)

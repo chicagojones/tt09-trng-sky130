@@ -31,7 +31,7 @@ module tb ();
 `endif
 
   // Instantiate the actual project
-  tt_um_chicagojones_tt09_trng_sky130 user_project (
+  tt_um_chicagojones_sky26a_trng user_project (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
