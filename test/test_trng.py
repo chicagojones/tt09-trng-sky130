@@ -69,7 +69,7 @@ class FullSuiteChaos:
 # 0x16: coupled_state[15:8] (read-only, y)
 # 0x17: logistic_state[7:0] (read-only)
 # 0x18: bernoulli_state[7:0](read-only)
-# 0x19: lorenz_state[7:0]   (read-only)
+# 0x19: lorenz_state[15:8]   (read-only)
 # 0x1A: lfsr_state[7:0]     (read-only)
 # 0x1D: capability bitmask  (read-only)
 # 0x20: scratch_reg          (read/write)

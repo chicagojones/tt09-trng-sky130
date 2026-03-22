@@ -7,7 +7,7 @@ A high-reliability True Random Number Generator (TRNG) based on an 8-oscillator 
 - **Robustness:** Built-in NIST SP 800-90B health monitors (RCT and APT) with auto-tuning feedback.
 - **Characterization:** On-chip 24-bit frequency counters for RO profiling via SPI.
 - **Fail-Safe:** Comprehensive control register to bypass whitening or manual override tuning.
-- **Compactness:** Fits within 1x2 Tiny Tapeout tiles (160um x 450um).
+- **Compactness:** Fits within 2x2 Tiny Tapeout tiles (approx. 334um x 216um).
 
 ## Architecture
 1. **Entropy Bank:** 8 Ring Oscillators (1 tunable, 7 fixed prime lengths) XORed together.

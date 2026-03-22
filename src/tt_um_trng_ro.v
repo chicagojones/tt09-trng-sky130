@@ -130,7 +130,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
             7'h16: reg_data_in = coupled_state[31:24]; // Y part MSB
             7'h17: reg_data_in = logistic_state[15:8];
             7'h18: reg_data_in = bern_state[15:8];
-            7'h19: reg_data_in = lorenz_state[23:16];
+            7'h19: reg_data_in = lorenz_state[15:8];
             7'h1A: reg_data_in = lfsr_state[31:24];
             7'h1D: reg_data_in = {1'b0,
                                   INCLUDE_LFSR[0],
@@ -221,7 +221,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
     wire [15:0] bern_state;
 
     wire lorenz_bit, lorenz_valid;
-    wire [23:0] lorenz_state;
+    wire [15:0] lorenz_state;
 
     wire lfsr_bit, lfsr_valid;
     wire [31:0] lfsr_state;
@@ -281,7 +281,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_LORENZ) begin : gen_lorenz
-            cond_lorenz #(.WIDTH(24)) lorenz_inst (
+            cond_lorenz #(.WIDTH(16)) lorenz_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(lorenz_bit), .out_valid(lorenz_valid),
@@ -290,7 +290,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end else begin : gen_no_lorenz
             assign lorenz_bit = 1'b0;
             assign lorenz_valid = 1'b0;
-            assign lorenz_state = 8'h00;
+            assign lorenz_state = 16'h0000;
         end
 
         if (INCLUDE_LFSR) begin : gen_lfsr
