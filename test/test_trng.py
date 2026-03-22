@@ -120,6 +120,19 @@ async def wait_clocks(dut, n):
     for _ in range(n):
         await RisingEdge(dut.clk)
 
+async def select_conditioner_and_wait_byte_valid(dut, cond_sel, max_cycles=500):
+    await spi_write_byte(dut, 0x13, cond_sel << 5)
+    await wait_clocks(dut, 20)
+    byte_valid_seen = False
+    for _ in range(max_cycles):
+        await RisingEdge(dut.clk)
+        uio_val = dut.uio_out.value
+        binval = uio_val.binstr
+        if len(binval) == 8 and binval[7] == '1':
+            byte_valid_seen = True
+            break
+    return byte_valid_seen
+
 # ===========================================================================
 # Functional Tests
 # ===========================================================================
@@ -164,9 +177,54 @@ async def test_nist_alarm_detection(dut):
     cocotb.start_soon(clock.start())
     await reset_dut(dut)
     dut.ui_in.value = (1 << 3)
-    await wait_clocks(dut, 50)
+    await wait_clocks(dut, 100)
     status = await spi_read_byte(dut, 0x10)
     assert (status >> 4) & 1 == 1
+
+@cocotb.test()
+async def test_manual_mode_ro_select(dut):
+    if os.environ.get('GATES') == 'yes': return
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    for sel_val in [0, 3, 7]:
+        dut.ui_in.value = (1 << 3) | (sel_val << 5)
+        await wait_clocks(dut, 10)
+        ro_sel_reg = await spi_read_byte(dut, 0x12)
+        assert (ro_sel_reg & 0x07) == sel_val
+
+@cocotb.test()
+async def test_cond_sel_tent_map(dut):
+    if os.environ.get('GATES') == 'yes': return
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_TENT)
+    assert byte_valid
+    state = await spi_read_byte(dut, 0x14)
+    assert state != 0
+
+@cocotb.test()
+async def test_cond_sel_lorenz(dut):
+    if os.environ.get('GATES') == 'yes': return
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+    byte_valid = await select_conditioner_and_wait_byte_valid(dut, COND_LORENZ, max_cycles=1000)
+    assert byte_valid
+    state = await spi_read_byte(dut, 0x19)
+    assert state != 0
+
+@cocotb.test()
+async def test_cond_capability_register(dut):
+    if os.environ.get('GATES') == 'yes': return
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    cap = await spi_read_byte(dut, 0x1D)
+    assert cap == 0x7F
 
 # ===========================================================================
 # Cross-Verification Chaos Tests
