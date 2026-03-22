@@ -143,6 +143,18 @@ module tt_um_chicagojones_sky26a_trng #(
     // Frequency Counter Output (24-bit)
     wire [23:0] freq_count;
 
+    // Latch-on-read: snapshot freq_count when address 0x00 (LSB) is read.
+    // Subsequent reads of 0x01 and 0x02 return from the snapshot, ensuring
+    // a consistent 24-bit value. Always read LSB first.
+    reg [23:0] freq_count_latch;
+    wire freq_latch_trigger = (reg_addr == 7'h00);
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            freq_count_latch <= 24'd0;
+        else if (freq_latch_trigger)
+            freq_count_latch <= freq_count;
+    end
+
     // SPI Follower
     spi_follower spi_inst (
         .clk(clk),
@@ -238,9 +250,9 @@ module tt_um_chicagojones_sky26a_trng #(
     // Register Read Multiplexer
     always @(*) begin
         case (reg_addr)
-            7'h00: reg_data_in = freq_count[7:0];
-            7'h01: reg_data_in = freq_count[15:8];
-            7'h02: reg_data_in = freq_count[23:16];
+            7'h00: reg_data_in = freq_count[7:0];           // LSB (triggers latch)
+            7'h01: reg_data_in = freq_count_latch[15:8];  // from snapshot
+            7'h02: reg_data_in = freq_count_latch[23:16]; // from snapshot
             7'h10: reg_data_in = {3'b0, alarm, 1'b0, freq_mux_sel};
             7'h11: reg_data_in = out_reg;
             7'h12: reg_data_in = {5'b0, ro_sel};
