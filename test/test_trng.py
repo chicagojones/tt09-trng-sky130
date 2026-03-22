@@ -24,26 +24,32 @@ class FullSuiteChaos:
         product = (x_int * omx) & 0xFFFF
         x_approx = (product >> 6) & 0xFF
         x_next = (x_approx & 0xFE) | ((x_approx & 0x01) ^ sampled_bit)
-        return 0x66 if x_next == 0 else x_next
+        x_next = 0x66 if x_next == 0 else x_next
+        out_bit = ((x_next >> 7) & 1) ^ ((x_next >> 4) & 1) ^ (x_next & 1)
+        return x_next, out_bit
 
     @staticmethod
-    def lorenz_step(x, y, z, sampled_bit=0):
-        def to_s16(v): return (v & 0x7FFF) - (v & 0x8000)
+    def lorenz_step(x, y, z, width=16, sampled_bit=0):
+        shift = width // 2
+        def to_s16(v): return (v & ( (1 << (width-1)) - 1)) - (v & (1 << (width-1)))
         xs, ys, zs = to_s16(x), to_s16(y), to_s16(z)
         dx = 10 * (ys - xs)
-        rho_minus_z = 0x1C00 - zs
+        rho_minus_z = (28 << shift) - zs
         mul_dy = (xs * rho_minus_z)
-        dy_p = (mul_dy >> 8) - ys
+        dy_p = (mul_dy >> shift) - ys
         mul_dz = (xs * ys)
-        dz_p = (mul_dz >> 8) - ((zs << 1) + zs)
+        dz_p = (mul_dz >> shift) - ((zs << 1) + zs)
         def update(s, dvar):
-            inc = ((dvar << 1) + dvar) >> 8
-            return (s + inc) & 0xFFFF
+            inc = ((dvar << 1) + dvar) >> shift
+            return (s + inc) & ((1 << width) - 1)
         nx = update(xs, dx)
         ny = update(ys, dy_p)
         nz = update(zs, dz_p)
-        nx = (nx & 0xFFFE) | ((nx & 0x01) ^ sampled_bit)
-        return nx, ny, nz
+        nx = (nx & ~1) | ((nx & 1) ^ sampled_bit)
+        
+        # New XOR output logic
+        out_bit = ((nx >> (width-1)) & 1) ^ ((nx >> shift) & 1) ^ ((nx >> (shift//2)) & 1)
+        return nx, ny, nz, out_bit
 
 # ---------------------------------------------------------------------------
 # Register Map
@@ -816,36 +822,46 @@ async def test_verify_chaos_logic(dut):
     await reset_dut(dut)
     dut.ui_in.value = (1 << 3)
     
-    # 1. Test Logistic Map
+    # 1. Test Logistic Map (16-bit)
     dut._log.info("Verifying Logistic Map...")
     await spi_write_byte(dut, 0x13, COND_LOGISTIC << 5)
-    py_log = 0x66
+    py_log = 0x0066 # 16-bit SEED {8'h0, 8'h66}
     for i in range(10):
         while True:
             await RisingEdge(dut.clk)
             if int(dut.gen_logistic.logistic_inst.out_valid.value) == 1: break
         s_bit = int(dut.sampled_bit.value)
-        py_log = FullSuiteChaos.logistic_map(py_log, s_bit)
+        
+        # Logistic map inline logic for 16-bit
+        mask = 0xFFFF
+        omx = (mask - py_log) & mask
+        product = py_log * omx
+        x_approx = (product >> 14) & mask # product >> (WIDTH-2)
+        py_log = (x_approx & 0xFFFE) | ((x_approx & 1) ^ s_bit)
+        if py_log == 0: py_log = 0x0066
+        
         await RisingEdge(dut.clk)
         rtl_log = await spi_read_byte(dut, 0x17)
-        if rtl_log != py_log:
-            dut._log.warning(f"Logistic mismatch at {i}: RTL=0x{rtl_log:02x}, PY=0x{py_log:02x}. Resync.")
-            py_log = rtl_log
+        py_log_top8 = (py_log >> 8) & 0xFF
+        if rtl_log != py_log_top8:
+            dut._log.warning(f"Logistic mismatch at {i}: RTL=0x{rtl_log:02x}, PY_TOP8=0x{py_log_top8:02x}. Resync.")
+            # Resync is hard since we only see top 8 bits, so we just log it.
 
-    # 2. Test Lorenz
+    # 2. Test Lorenz (24-bit)
     dut._log.info("Verifying Lorenz Attractor...")
     await spi_write_byte(dut, 0x13, COND_LORENZ << 5)
-    px, py, pz = 0x0100, 0x0100, 0x0100
+    px, py, pz = 0x1000, 0x1000, 0x1000 # 24-bit SEED (1.0 in Q12.12)
     for i in range(10):
         while True:
             await RisingEdge(dut.clk)
             if int(dut.gen_lorenz.lorenz_inst.out_valid.value) == 1: break
         s_bit = int(dut.sampled_bit.value)
-        px, py, pz = FullSuiteChaos.lorenz_step(px, py, pz, s_bit)
+        px, py, pz, py_out_bit = FullSuiteChaos.lorenz_step(px, py, pz, 24, s_bit)
+
         await RisingEdge(dut.clk)
         rtl_lx = await spi_read_byte(dut, 0x19)
-        if rtl_lx != ((px >> 8) & 0xFF):
-            dut._log.warning(f"Lorenz mismatch at {i}: RTL=0x{rtl_lx:02x}, PY=0x{(px>>8)&0xFF:02x}. Resync.")
-            px = (rtl_lx << 8) | (px & 0xFF)
+        py_lx_top8 = (px >> 16) & 0xFF
+        if rtl_lx != py_lx_top8:
+            dut._log.warning(f"Lorenz mismatch at {i}: RTL=0x{rtl_lx:02x}, PY_TOP8=0x{py_lx_top8:02x}. Resync.")
 
     dut._log.info("All Cross-Verification tests finished.")

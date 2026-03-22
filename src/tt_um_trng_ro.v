@@ -125,13 +125,13 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
             7'h11: reg_data_in = out_reg;
             7'h12: reg_data_in = {5'b0, ro_sel};
             7'h13: reg_data_in = ctrl_reg;
-            7'h14: reg_data_in = tent_state;
-            7'h15: reg_data_in = coupled_state[7:0];
-            7'h16: reg_data_in = coupled_state[15:8];
-            7'h17: reg_data_in = logistic_state;
-            7'h18: reg_data_in = bern_state;
-            7'h19: reg_data_in = lorenz_state;
-            7'h1A: reg_data_in = lfsr_state;
+            7'h14: reg_data_in = tent_state[15:8];
+            7'h15: reg_data_in = coupled_state[15:8]; // X part MSB
+            7'h16: reg_data_in = coupled_state[31:24]; // Y part MSB
+            7'h17: reg_data_in = logistic_state[15:8];
+            7'h18: reg_data_in = bern_state[15:8];
+            7'h19: reg_data_in = lorenz_state[23:16];
+            7'h1A: reg_data_in = lfsr_state[31:24];
             7'h1D: reg_data_in = {1'b0,
                                   INCLUDE_LFSR[0],
                                   INCLUDE_LORENZ[0],
@@ -209,27 +209,27 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
 
     // -- Conditioner Module Wires --
     wire tent_bit, tent_valid;
-    wire [7:0] tent_state;
+    wire [15:0] tent_state;
 
     wire coupled_bit, coupled_valid;
-    wire [15:0] coupled_state;
+    wire [31:0] coupled_state;
 
     wire logistic_bit, logistic_valid;
-    wire [7:0] logistic_state;
+    wire [15:0] logistic_state;
 
     wire bern_bit, bern_valid;
-    wire [7:0] bern_state;
+    wire [15:0] bern_state;
 
     wire lorenz_bit, lorenz_valid;
-    wire [7:0] lorenz_state;
+    wire [23:0] lorenz_state;
 
     wire lfsr_bit, lfsr_valid;
-    wire [7:0] lfsr_state;
+    wire [31:0] lfsr_state;
 
     // -- Conditioner Instantiations (parameterized) --
     generate
         if (INCLUDE_TENT_MAP) begin : gen_tent
-            cond_tent_map tent_inst (
+            cond_tent_map #(.WIDTH(16)) tent_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(tent_bit), .out_valid(tent_valid),
@@ -242,7 +242,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_COUPLED_TENT) begin : gen_coupled
-            cond_coupled_tent coupled_inst (
+            cond_coupled_tent #(.WIDTH(16)) coupled_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(coupled_bit), .out_valid(coupled_valid),
@@ -255,7 +255,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_LOGISTIC) begin : gen_logistic
-            cond_logistic logistic_inst (
+            cond_logistic #(.WIDTH(16)) logistic_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(logistic_bit), .out_valid(logistic_valid),
@@ -268,7 +268,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_BERNOULLI) begin : gen_bernoulli
-            cond_bernoulli bern_inst (
+            cond_bernoulli #(.WIDTH(16)) bern_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(bern_bit), .out_valid(bern_valid),
@@ -281,7 +281,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_LORENZ) begin : gen_lorenz
-            cond_lorenz lorenz_inst (
+            cond_lorenz #(.WIDTH(24)) lorenz_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(lorenz_bit), .out_valid(lorenz_valid),
@@ -294,7 +294,7 @@ module tt_um_chicagojones_tt09_trng_sky130 #(
         end
 
         if (INCLUDE_LFSR) begin : gen_lfsr
-            cond_lfsr lfsr_inst (
+            cond_lfsr #(.WIDTH(32)) lfsr_inst (
                 .clk(clk), .rst_n(rst_n), .en(en),
                 .sampled_bit(sampled_bit),
                 .out_bit(lfsr_bit), .out_valid(lfsr_valid),
