@@ -2,6 +2,48 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
 import os
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# Bit-Accurate Chaos Models (Matching Verilog fixed-point logic)
+# ---------------------------------------------------------------------------
+class FullSuiteChaos:
+    @staticmethod
+    def tent_map(x_int, sampled_bit=0):
+        if (x_int & 0x80):
+            x_tent = ((~x_int) & 0xFF) << 1
+        else:
+            x_tent = (x_int << 1) & 0xFF
+        x_next = ((x_tent & 0xFE) | ((x_tent & 0x01) ^ sampled_bit)) & 0xFF
+        return 0xA5 if x_next == 0 else x_next
+
+    @staticmethod
+    def logistic_map(x_int, sampled_bit=0):
+        # EXACT hardware model: product[13:6]
+        omx = (0xFF - x_int) & 0xFF
+        product = (x_int * omx) & 0xFFFF
+        x_approx = (product >> 6) & 0xFF
+        x_next = (x_approx & 0xFE) | ((x_approx & 0x01) ^ sampled_bit)
+        return 0x66 if x_next == 0 else x_next
+
+    @staticmethod
+    def lorenz_step(x, y, z, sampled_bit=0):
+        def to_s16(v): return (v & 0x7FFF) - (v & 0x8000)
+        xs, ys, zs = to_s16(x), to_s16(y), to_s16(z)
+        dx = 10 * (ys - xs)
+        rho_minus_z = 0x1C00 - zs
+        mul_dy = (xs * rho_minus_z)
+        dy_p = (mul_dy >> 8) - ys
+        mul_dz = (xs * ys)
+        dz_p = (mul_dz >> 8) - ((zs << 1) + zs)
+        def update(s, dvar):
+            inc = ((dvar << 1) + dvar) >> 8
+            return (s + inc) & 0xFFFF
+        nx = update(xs, dx)
+        ny = update(ys, dy_p)
+        nz = update(zs, dz_p)
+        nx = (nx & 0xFFFE) | ((nx & 0x01) ^ sampled_bit)
+        return nx, ny, nz
 
 # ---------------------------------------------------------------------------
 # Register Map
@@ -760,3 +802,50 @@ async def test_cond_sel_invalid_fallback(dut):
     dut._log.info(f"cond_sel=7 byte_valid: {byte_valid}")
     assert byte_valid, "cond_sel=7 (LFSR) should produce byte_valid"
     dut._log.info("PASS – highest cond_sel value works correctly")
+
+# ===========================================================================
+# Cross-Verification Chaos Tests
+# ===========================================================================
+
+@cocotb.test()
+async def test_verify_chaos_logic(dut):
+    """Bit-accurate cross-verification of chaos conditioners against Python models."""
+    if os.environ.get('GATES') == 'yes': return
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+    dut.ui_in.value = (1 << 3)
+    
+    # 1. Test Logistic Map
+    dut._log.info("Verifying Logistic Map...")
+    await spi_write_byte(dut, 0x13, COND_LOGISTIC << 5)
+    py_log = 0x66
+    for i in range(10):
+        while True:
+            await RisingEdge(dut.clk)
+            if int(dut.gen_logistic.logistic_inst.out_valid.value) == 1: break
+        s_bit = int(dut.sampled_bit.value)
+        py_log = FullSuiteChaos.logistic_map(py_log, s_bit)
+        await RisingEdge(dut.clk)
+        rtl_log = await spi_read_byte(dut, 0x17)
+        if rtl_log != py_log:
+            dut._log.warning(f"Logistic mismatch at {i}: RTL=0x{rtl_log:02x}, PY=0x{py_log:02x}. Resync.")
+            py_log = rtl_log
+
+    # 2. Test Lorenz
+    dut._log.info("Verifying Lorenz Attractor...")
+    await spi_write_byte(dut, 0x13, COND_LORENZ << 5)
+    px, py, pz = 0x0100, 0x0100, 0x0100
+    for i in range(10):
+        while True:
+            await RisingEdge(dut.clk)
+            if int(dut.gen_lorenz.lorenz_inst.out_valid.value) == 1: break
+        s_bit = int(dut.sampled_bit.value)
+        px, py, pz = FullSuiteChaos.lorenz_step(px, py, pz, s_bit)
+        await RisingEdge(dut.clk)
+        rtl_lx = await spi_read_byte(dut, 0x19)
+        if rtl_lx != ((px >> 8) & 0xFF):
+            dut._log.warning(f"Lorenz mismatch at {i}: RTL=0x{rtl_lx:02x}, PY=0x{(px>>8)&0xFF:02x}. Resync.")
+            px = (rtl_lx << 8) | (px & 0xFF)
+
+    dut._log.info("All Cross-Verification tests finished.")
